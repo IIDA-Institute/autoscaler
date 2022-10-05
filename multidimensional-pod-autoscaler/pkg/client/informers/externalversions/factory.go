@@ -19,9 +19,6 @@ limitations under the License.
 package externalversions
 
 import (
-	versioned "autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
-	autoscalingk8sio "autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/autoscaling.k8s.io"
-	internalinterfaces "autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
 	reflect "reflect"
 	sync "sync"
 	time "time"
@@ -29,6 +26,9 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	versioned "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	autoscalingk8sio "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/autoscaling.k8s.io"
+	internalinterfaces "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
 	cache "k8s.io/client-go/tools/cache"
 )
 

@@ -19,8 +19,8 @@ limitations under the License.
 package autoscaling
 
 import (
-	v1alpha1 "autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/autoscaling.k8s.io/v1alpha1"
-	internalinterfaces "autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/autoscaling.k8s.io/v1alpha1"
+	internalinterfaces "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
 )
 
 // Interface provides access to each of this group's versions.

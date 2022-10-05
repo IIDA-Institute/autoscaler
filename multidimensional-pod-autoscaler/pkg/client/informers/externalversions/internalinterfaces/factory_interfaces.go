@@ -19,11 +19,11 @@ limitations under the License.
 package internalinterfaces
 
 import (
-	versioned "autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
 	time "time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	versioned "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
 	cache "k8s.io/client-go/tools/cache"
 )
 

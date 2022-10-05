@@ -19,10 +19,10 @@ limitations under the License.
 package externalversions
 
 import (
-	v1alpha1 "autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	"fmt"
 
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	v1alpha1 "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
