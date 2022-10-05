@@ -1,3 +1,8 @@
+# VSCode
+go.sum
+go.mod
+.ibm-project
+
 # OSX leaves these everywhere on SMB shares
 ._*
 

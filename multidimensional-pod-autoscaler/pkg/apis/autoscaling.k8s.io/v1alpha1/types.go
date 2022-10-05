@@ -4,6 +4,7 @@ import (
 	autoscaling "k8s.io/api/autoscaling/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	vpa "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
 // +genclient
@@ -51,9 +52,14 @@ type MultidimPodAutoscalerSpec struct {
 	// Describes the goals in terms of both resource utilization and workload performance.
 	Goals *ScalingGoals `json:"goals"`
 
-	// Describes the constraints for the number of replicas and for each pod in terms of CPU and
-	// memory.
-	Constraints *ResourceScalingConstraints `json:"constraints,omitempty"`
+	// Describes the constraints for the number of replicas.
+	Constraints *HorizontalScalingConstraints `json:"constraints,omitempty"`
+	// Controls how the VPA autoscaler computes recommended resources.
+	// The resource policy is also used to set constraints on the recommendations for individual
+	// containers. If not specified, the autoscaler computes recommended resources for all
+	// containers in the pod, without additional constraints.
+	// +optional
+	ResourcePolicy *vpa.PodResourcePolicy `json:"resourcePolicy,omitempty"`
 
 	// Recommender responsible for generating recommendation for the set of pods and the deployment.
 	// List should be empty (then the default recommender will be used) or contain exactly one
@@ -78,7 +84,7 @@ type MultidimPodAutoscalerStatus struct {
 	// The most recently computed amount of resources for each controlled pod recommended by the
 	// autoscaler.
 	// +optional
-	Recommendation *RecommendedPodResources `json:"recommendation,omitempty"`
+	Recommendation *vpa.RecommendedPodResources `json:"recommendation,omitempty"`
 
 	// Current average CPU utilization over all pods, represented as a ratio with the requested CPU.
 	// E.g., 0.7 means that an average pod is using now 70% of its requested CPU.
@@ -105,7 +111,7 @@ type MultidimPodAutoscalerStatus struct {
 	// +optional
 	// +patchMergeKey=type
 	// +patchStrategy=merge
-	Conditions []MultidimPodAutoscalerCondition `json:"conditions,omitempty"`
+	Conditions []MultidimPodAutoscalerCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // PodUpdatePolicy describes the rules on how changes are applied to the pods.
@@ -162,52 +168,15 @@ const (
 	MetricTypeThroughput MetricType = "Throughput"
 )
 
-// ResourceScalingConstraints describes the constraints for both horizontal and vertical scaling.
-type ResourceScalingConstraints struct {
+// HorizontalScalingConstraints describes the constraints for horizontal scaling.
+type HorizontalScalingConstraints struct {
 	// Lower limit for the number of pods that can be set by the autoscaler, default 1.
 	// +optional
-	MinReplicas int32 `json:"minReplicas,omitempty"`
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
 	// Upper limit for the number of pods that can be set by the autoscaler; cannot be smaller than
 	// MinReplicas.
-	MaxReplicas int32 `json:"maxReplicas"`
-	// Per-container resource constraints.
-	// +optional
-	// +patchMergeKey=containerName
-	// +patchStrategy=merge
-	ContainerConstraints []*ContainerConstraint `json:"containerConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"containerName"`
+	MaxReplicas *int32 `json:"maxReplicas"`
 }
-
-// ContainerConstraint controls the upper and lower limits of the resources that the autoscaler can
-// set for a specific
-// container.
-type ContainerConstraint struct {
-	// Name of the container.
-	ContainerName string `json:"containerName,omitempty"`
-	// Specifies the minimal amount of resources that will be recommended for the container. The
-	// default is no minimum.
-	// +optional
-	MinAllowed v1.ResourceList `json:"minAllowed,omitempty"`
-	// Specifies the maximum amount of resources that will be recommended for the container. The
-	// default is no maximum.
-	// +optional
-	MaxAllowed v1.ResourceList `json:"maxAllowed,omitempty"`
-	// Specifies which resource values should be controlled.
-	// The default is "RequestsAndLimits".
-	// +optional
-	ControlledValues *ContainerControlledValues `json:"controlledValues,omitempty"`
-}
-
-// ContainerControlledValues controls which resource value should be autoscaled.
-// +kubebuilder:validation:Enum=RequestsAndLimits;RequestsOnly
-type ContainerControlledValues string
-
-const (
-	// ContainerControlledValuesRequestsAndLimits means resource request and limits are scaled
-	// automatically. The limit is scaled proportionally to the request.
-	ContainerControlledValuesRequestsAndLimits ContainerControlledValues = "RequestsAndLimits"
-	// ContainerControlledValuesRequestsOnly means only requested resource is autoscaled.
-	ContainerControlledValuesRequestsOnly ContainerControlledValues = "RequestsOnly"
-)
 
 // MultidimPodAutoscalerRecommenderSelector points to a specific Multidimensional Pod Autoscaler
 // recommender.
@@ -215,44 +184,6 @@ const (
 type MultidimPodAutoscalerRecommenderSelector struct {
 	// Name of the recommender responsible for generating recommendation for this object.
 	Name string `json:"name"`
-}
-
-// RecommendedPodResources is the recommendation of resources computed by autoscaler. It contains a
-// recommendation for each container in the pod (except for those with `ContainerScalingMode` set
-// to 'Off').
-type RecommendedPodResources struct {
-	// Resources recommended by the autoscaler for each container.
-	// +optional
-	ContainerRecommendations []RecommendedContainerResources `json:"containerRecommendations,omitempty"`
-}
-
-// RecommendedContainerResources is the recommendation of resources computed by autoscaler for a
-// specific container. Respects the container resource policy if present in the spec. In particular
-// the recommendation is not produced for containers with `ContainerScalingMode` set to 'Off'.
-type RecommendedContainerResources struct {
-	// Name of the container.
-	ContainerName string `json:"containerName,omitempty"`
-	// Recommended amount of resources. Observes ContainerResourcePolicy.
-	Target v1.ResourceList `json:"target"`
-	// Minimum recommended amount of resources. Observes ContainerResourcePolicy.
-	// This amount is not guaranteed to be sufficient for the application to operate in a stable
-	// way, however running with less resources is likely to have significant impact on performance
-	// or availability.
-	// +optional
-	LowerBound v1.ResourceList `json:"lowerBound,omitempty"`
-	// Maximum recommended amount of resources. Observes ContainerResourcePolicy.
-	// Any resources allocated beyond this value are likely wasted. This value may be larger than
-	// the maximum amount of application is actually capable of consuming.
-	// +optional
-	UpperBound v1.ResourceList `json:"upperBound,omitempty"`
-	// The most recent recommended resources target computed by the autoscaler for the controlled
-	// pods, based only on actual resource usage, not taking into account the
-	// ContainerResourcePolicy.
-	// May differ from the Recommendation if the actual resource usage causes the target to violate
-	// the ContainerResourcePolicy (lower than MinAllowed or higher that MaxAllowed).
-	// Used only as status indication, will not affect actual resource assignment.
-	// +optional
-	UncappedTarget v1.ResourceList `json:"uncappedTarget,omitempty"`
 }
 
 // MultidimPodAutoscalerCondition describes the state of a MultidimPodAutoscaler at a certain point.
@@ -312,7 +243,7 @@ type MultidimPodAutoscalerList struct {
 // +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:storageversion
-// +kubebuilder:resource:shortName=vpacheckpoint
+// +kubebuilder:resource:shortName=mpacheckpoint
 
 // MultidimPodAutoscalerCheckpoint is the checkpoint of the internal state of MPA that is used for
 // recovery after recommender's restart.
@@ -323,62 +254,11 @@ type MultidimPodAutoscalerCheckpoint struct {
 	// Specification of the checkpoint.
 	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status.
 	// +optional
-	Spec MultidimPodAutoscalerCheckpointSpec `json:"spec,omitempty"`
+	Spec vpa.VerticalPodAutoscalerCheckpointSpec `json:"spec,omitempty"`
 
 	// Data of the checkpoint.
 	// +optional
-	Status MultidimPodAutoscalerCheckpointStatus `json:"status,omitempty"`
-}
-
-// MultidimPodAutoscalerCheckpointSpec is the specification of the checkpoint object.
-type MultidimPodAutoscalerCheckpointSpec struct {
-	// Name of the MPA object that stored MultidimPodAutoscalerCheckpoint object.
-	MPAObjectName string `json:"mpaObjectName,omitempty"`
-
-	// Name of the checkpointed container.
-	ContainerName string `json:"containerName,omitempty"`
-}
-
-// MultidimPodAutoscalerCheckpointStatus contains data of the checkpoint.
-type MultidimPodAutoscalerCheckpointStatus struct {
-	// The time when the status was last refreshed.
-	// +nullable
-	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
-
-	// Version of the format of the stored data.
-	Version string `json:"version,omitempty"`
-
-	// Checkpoint of histogram for consumption of CPU.
-	CPUHistogram HistogramCheckpoint `json:"cpuHistogram,omitempty"`
-
-	// Checkpoint of histogram for consumption of memory.
-	MemoryHistogram HistogramCheckpoint `json:"memoryHistogram,omitempty"`
-
-	// Timestamp of the fist sample from the histograms.
-	// +nullable
-	FirstSampleStart metav1.Time `json:"firstSampleStart,omitempty"`
-
-	// Timestamp of the last sample from the histograms.
-	// +nullable
-	LastSampleStart metav1.Time `json:"lastSampleStart,omitempty"`
-
-	// Total number of samples in the histograms.
-	TotalSamplesCount int `json:"totalSamplesCount,omitempty"`
-}
-
-// HistogramCheckpoint contains data needed to reconstruct the histogram.
-type HistogramCheckpoint struct {
-	// Reference timestamp for samples collected within this histogram.
-	// +nullable
-	ReferenceTimestamp metav1.Time `json:"referenceTimestamp,omitempty"`
-
-	// Map from bucket index to bucket weight.
-	// +kubebuilder:validation:Type=object
-	// +kubebuilder:validation:XPreserveUnknownFields
-	BucketWeights map[int]uint32 `json:"bucketWeights,omitempty"`
-
-	// Sum of samples to be used as denominator for weights from BucketWeights.
-	TotalWeight float64 `json:"totalWeight,omitempty"`
+	Status vpa.VerticalPodAutoscalerCheckpointStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
