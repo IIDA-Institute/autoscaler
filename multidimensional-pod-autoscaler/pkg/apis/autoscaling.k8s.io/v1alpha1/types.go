@@ -14,6 +14,7 @@ import (
 // +kubebuilder:printcolumn:name="Mode",type="string",JSONPath=".spec.updatePolicy.updateMode"
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".status.recommendation.containerRecommendations[0].target.cpu"
 // +kubebuilder:printcolumn:name="Mem",type="string",JSONPath=".status.recommendation.containerRecommendations[0].target.memory"
+// +kubebuilder:printcolumn:name="Provided",type="string",JSONPath=".status.conditions[?(@.type=='RecommendationProvided')].status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // MultidimPodAutoscaler is the configuration for a multidimensional pod autoscaler,
@@ -119,28 +120,8 @@ type PodUpdatePolicy struct {
 	// Controls when autoscaler applies changes to the pod resources.
 	// The default is 'Auto'.
 	// +optional
-	UpdateMode *UpdateMode `json:"updateMode,omitempty"`
+	UpdateMode *vpa.UpdateMode `json:"updateMode,omitempty"`
 }
-
-// UpdateMode controls when autoscaler applies changes to the pod resoures.
-type UpdateMode string
-
-const (
-	// UpdateModeOff means that autoscaler never changes Pod resources.
-	// The recommender still sets the recommended resources in the MultidimPodAutoscaler object.
-	// This can be used for a "dry run".
-	UpdateModeOff UpdateMode = "Off"
-	// UpdateModeInitial means that autoscaler only assigns resources on pod creation and does not
-	// change them during the lifetime of the pod.
-	UpdateModeInitial UpdateMode = "Initial"
-	// UpdateModeRecreate means that autoscaler assigns resources on pod creation and additionally
-	// can update them during the lifetime of the pod by deleting and recreating the pod.
-	UpdateModeRecreate UpdateMode = "Recreate"
-	// UpdateModeAuto means that autoscaler assigns resources on pod creation and additionally can
-	// update them during the lifetime of the pod, using any available update method. Currently this
-	// is equivalent to Recreate, which is the only available update method.
-	UpdateModeAuto UpdateMode = "Auto"
-)
 
 // ScalingGoals describes the resource utilization and performance goals.
 type ScalingGoals struct {

@@ -161,3 +161,9 @@ type VpaID struct {
 	Namespace string
 	VpaName   string
 }
+
+// MpaID contains information needed to identify a MPA API object within a cluster.
+type MpaID struct {
+	Namespace string
+	MpaName   string
+}

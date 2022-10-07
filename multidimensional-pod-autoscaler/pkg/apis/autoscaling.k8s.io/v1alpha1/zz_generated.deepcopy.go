@@ -318,7 +318,7 @@ func (in *PodUpdatePolicy) DeepCopyInto(out *PodUpdatePolicy) {
 	*out = *in
 	if in.UpdateMode != nil {
 		in, out := &in.UpdateMode, &out.UpdateMode
-		*out = new(UpdateMode)
+		*out = new(autoscalingk8siov1.UpdateMode)
 		**out = **in
 	}
 	return

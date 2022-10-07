@@ -27,19 +27,19 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
-	vpa_lister "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1"
-	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
+	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
+	controllerfetcher "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/history"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/metrics"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/oom"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/spec"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target"
+	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
-	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -58,7 +58,7 @@ const (
 	scaleCacheEntryFreshnessTime         = 10 * time.Minute
 	scaleCacheEntryJitterFactor  float64 = 1.
 	defaultResyncPeriod                  = 10 * time.Minute
-	// DefaultRecommenderName designates the recommender that will handle VPA objects which don't specify
+	// DefaultRecommenderName designates the recommender that will handle MPA objects which don't specify
 	// recommender name explicitly (and so implicitly specify that the default recommender should handle them)
 	DefaultRecommenderName = "default"
 )
@@ -71,8 +71,8 @@ type ClusterStateFeeder interface {
 	// InitFromCheckpoints loads historical checkpoints into clusterState.
 	InitFromCheckpoints()
 
-	// LoadVPAs updates clusterState with current state of VPAs.
-	LoadVPAs()
+	// LoadMPAs updates clusterState with current state of MPAs.
+	LoadMPAs()
 
 	// LoadPods updates clusterState with current specification of Pods and their Containers.
 	LoadPods()
@@ -80,7 +80,7 @@ type ClusterStateFeeder interface {
 	// LoadRealTimeMetrics updates clusterState with current usage metrics of containers.
 	LoadRealTimeMetrics()
 
-	// GarbageCollectCheckpoints removes historical checkpoints that don't have a matching VPA.
+	// GarbageCollectCheckpoints removes historical checkpoints that don't have a matching MPA.
 	GarbageCollectCheckpoints()
 }
 
@@ -89,11 +89,11 @@ type ClusterStateFeederFactory struct {
 	ClusterState        *model.ClusterState
 	KubeClient          kube_client.Interface
 	MetricsClient       metrics.MetricsClient
-	VpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
-	VpaLister           vpa_lister.VerticalPodAutoscalerLister
+	MpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
+	MpaLister           mpa_lister.MultidimPodAutoscalerLister
 	PodLister           v1lister.PodLister
 	OOMObserver         oom.Observer
-	SelectorFetcher     target.VpaTargetSelectorFetcher
+	SelectorFetcher     target.MpaTargetSelectorFetcher
 	MemorySaveMode      bool
 	ControllerFetcher   controllerfetcher.ControllerFetcher
 	RecommenderName     string
@@ -105,8 +105,8 @@ func (m ClusterStateFeederFactory) Make() *clusterStateFeeder {
 		coreClient:          m.KubeClient.CoreV1(),
 		metricsClient:       m.MetricsClient,
 		oomChan:             m.OOMObserver.GetObservedOomsChannel(),
-		vpaCheckpointClient: m.VpaCheckpointClient,
-		vpaLister:           m.VpaLister,
+		mpaCheckpointClient: m.MpaCheckpointClient,
+		mpaLister:           m.MpaLister,
 		clusterState:        m.ClusterState,
 		specClient:          spec.NewSpecClient(m.PodLister),
 		selectorFetcher:     m.SelectorFetcher,
@@ -129,10 +129,10 @@ func NewClusterStateFeeder(config *rest.Config, clusterState *model.ClusterState
 		OOMObserver:         oomObserver,
 		KubeClient:          kubeClient,
 		MetricsClient:       newMetricsClient(config, namespace, metricsClientName),
-		VpaCheckpointClient: vpa_clientset.NewForConfigOrDie(config).AutoscalingV1(),
-		VpaLister:           vpa_api_util.NewVpasLister(vpa_clientset.NewForConfigOrDie(config), make(chan struct{}), namespace),
+		MpaCheckpointClient: mpa_clientset.NewForConfigOrDie(config).AutoscalingV1alpha1(),
+		MpaLister:           mpa_api_util.NewMpasLister(mpa_clientset.NewForConfigOrDie(config), make(chan struct{}), namespace),
 		ClusterState:        clusterState,
-		SelectorFetcher:     target.NewVpaTargetSelectorFetcher(config, kubeClient, factory),
+		SelectorFetcher:     target.NewMpaTargetSelectorFetcher(config, kubeClient, factory),
 		MemorySaveMode:      memorySave,
 		ControllerFetcher:   controllerFetcher,
 		RecommenderName:     recommenderName,
@@ -223,17 +223,17 @@ type clusterStateFeeder struct {
 	specClient          spec.SpecClient
 	metricsClient       metrics.MetricsClient
 	oomChan             <-chan oom.OomInfo
-	vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
-	vpaLister           vpa_lister.VerticalPodAutoscalerLister
+	mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
+	mpaLister           mpa_lister.MultidimPodAutoscalerLister
 	clusterState        *model.ClusterState
-	selectorFetcher     target.VpaTargetSelectorFetcher
+	selectorFetcher     target.MpaTargetSelectorFetcher
 	memorySaveMode      bool
 	controllerFetcher   controllerfetcher.ControllerFetcher
 	recommenderName     string
 }
 
 func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider history.HistoryProvider) {
-	klog.V(3).Info("Initializing VPA from history provider")
+	klog.V(3).Info("Initializing MPA from history provider")
 	clusterHistory, err := historyProvider.GetClusterHistory()
 	if err != nil {
 		klog.Errorf("Cannot get cluster history: %v", err)
@@ -263,41 +263,41 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 	}
 }
 
-func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.VerticalPodAutoscalerCheckpoint) error {
-	vpaID := model.VpaID{Namespace: checkpoint.Namespace, VpaName: checkpoint.Spec.VPAObjectName}
-	vpa, exists := feeder.clusterState.Vpas[vpaID]
+func (feeder *clusterStateFeeder) setMpaCheckpoint(checkpoint *mpa_types.MultidimPodAutoscalerCheckpoint) error {
+	mpaID := model.MpaID{Namespace: checkpoint.Namespace, MpaName: checkpoint.Spec.VPAObjectName}
+	mpa, exists := feeder.clusterState.Mpas[mpaID]
 	if !exists {
-		return fmt.Errorf("cannot load checkpoint to missing VPA object %+v", vpaID)
+		return fmt.Errorf("cannot load checkpoint to missing MPA object %+v", mpaID)
 	}
 
 	cs := model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint.Status)
 	if err != nil {
-		return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)
+		return fmt.Errorf("cannot load checkpoint for MPA %+v. Reason: %v", mpa.ID, err)
 	}
-	vpa.ContainersInitialAggregateState[checkpoint.Spec.ContainerName] = cs
+	mpa.ContainersInitialAggregateState[checkpoint.Spec.ContainerName] = cs
 	return nil
 }
 
 func (feeder *clusterStateFeeder) InitFromCheckpoints() {
-	klog.V(3).Info("Initializing VPA from checkpoints")
-	feeder.LoadVPAs()
+	klog.V(3).Info("Initializing MPA from checkpoints")
+	feeder.LoadMPAs()
 
 	namespaces := make(map[string]bool)
-	for _, v := range feeder.clusterState.Vpas {
+	for _, v := range feeder.clusterState.Mpas {
 		namespaces[v.ID.Namespace] = true
 	}
 
 	for namespace := range namespaces {
 		klog.V(3).Infof("Fetching checkpoints from namespace %s", namespace)
-		checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+		checkpointList, err := feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
+			klog.Errorf("Cannot list MPA checkpoints from namespace %v. Reason: %+v", namespace, err)
 		}
 		for _, checkpoint := range checkpointList.Items {
 
-			klog.V(3).Infof("Loading VPA %s/%s checkpoint for %s", checkpoint.ObjectMeta.Namespace, checkpoint.Spec.VPAObjectName, checkpoint.Spec.ContainerName)
-			err = feeder.setVpaCheckpoint(&checkpoint)
+			klog.V(3).Infof("Loading MPA %s/%s checkpoint for %s", checkpoint.ObjectMeta.Namespace, checkpoint.Spec.VPAObjectName, checkpoint.Spec.ContainerName)
+			err = feeder.setMpaCheckpoint(&checkpoint)
 			if err != nil {
 				klog.Errorf("Error while loading checkpoint. Reason: %+v", err)
 			}
@@ -308,7 +308,7 @@ func (feeder *clusterStateFeeder) InitFromCheckpoints() {
 
 func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 	klog.V(3).Info("Starting garbage collection of checkpoints")
-	feeder.LoadVPAs()
+	feeder.LoadMPAs()
 
 	namspaceList, err := feeder.coreClient.Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -318,30 +318,30 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 
 	for _, namespaceItem := range namspaceList.Items {
 		namespace := namespaceItem.Name
-		checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+		checkpointList, err := feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
+			klog.Errorf("Cannot list MPA checkpoints from namespace %v. Reason: %+v", namespace, err)
 		}
 		for _, checkpoint := range checkpointList.Items {
-			vpaID := model.VpaID{Namespace: checkpoint.Namespace, VpaName: checkpoint.Spec.VPAObjectName}
-			_, exists := feeder.clusterState.Vpas[vpaID]
+			mpaID := model.MpaID{Namespace: checkpoint.Namespace, MpaName: checkpoint.Spec.VPAObjectName}
+			_, exists := feeder.clusterState.Mpas[mpaID]
 			if !exists {
-				err = feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
+				err = feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
 				if err == nil {
-					klog.V(3).Infof("Orphaned VPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
+					klog.V(3).Infof("Orphaned MPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
 				} else {
-					klog.Errorf("Cannot delete VPA checkpoint %v/%v. Reason: %+v", namespace, checkpoint.Name, err)
+					klog.Errorf("Cannot delete MPA checkpoint %v/%v. Reason: %+v", namespace, checkpoint.Name, err)
 				}
 			}
 		}
 	}
 }
 
-func implicitDefaultRecommender(selectors []*vpa_types.VerticalPodAutoscalerRecommenderSelector) bool {
+func implicitDefaultRecommender(selectors []*mpa_types.MultidimPodAutoscalerRecommenderSelector) bool {
 	return len(selectors) == 0
 }
 
-func selectsRecommender(selectors []*vpa_types.VerticalPodAutoscalerRecommenderSelector, name *string) bool {
+func selectsRecommender(selectors []*mpa_types.MultidimPodAutoscalerRecommenderSelector, name *string) bool {
 	for _, s := range selectors {
 		if s.Name == *name {
 			return true
@@ -350,78 +350,78 @@ func selectsRecommender(selectors []*vpa_types.VerticalPodAutoscalerRecommenderS
 	return false
 }
 
-// Filter VPA objects whose specified recommender names are not default
-func filterVPAs(feeder *clusterStateFeeder, allVpaCRDs []*vpa_types.VerticalPodAutoscaler) []*vpa_types.VerticalPodAutoscaler {
-	klog.V(3).Infof("Start selecting the vpaCRDs.")
-	var vpaCRDs []*vpa_types.VerticalPodAutoscaler
-	for _, vpaCRD := range allVpaCRDs {
+// Filter MPA objects whose specified recommender names are not default
+func filterMPAs(feeder *clusterStateFeeder, allMpaCRDs []*mpa_types.MultidimPodAutoscaler) []*mpa_types.MultidimPodAutoscaler {
+	klog.V(3).Infof("Start selecting the mpaCRDs.")
+	var mpaCRDs []*mpa_types.MultidimPodAutoscaler
+	for _, mpaCRD := range allMpaCRDs {
 		if feeder.recommenderName == DefaultRecommenderName {
-			if !implicitDefaultRecommender(vpaCRD.Spec.Recommenders) && !selectsRecommender(vpaCRD.Spec.Recommenders, &feeder.recommenderName) {
-				klog.V(6).Infof("Ignoring vpaCRD %s in namespace %s as current recommender's name %v doesn't appear among its recommenders", vpaCRD.Name, vpaCRD.Namespace, feeder.recommenderName)
+			if !implicitDefaultRecommender(mpaCRD.Spec.Recommenders) && !selectsRecommender(mpaCRD.Spec.Recommenders, &feeder.recommenderName) {
+				klog.V(6).Infof("Ignoring mpaCRD %s in namespace %s as current recommender's name %v doesn't appear among its recommenders", mpaCRD.Name, mpaCRD.Namespace, feeder.recommenderName)
 				continue
 			}
 		} else {
-			if implicitDefaultRecommender(vpaCRD.Spec.Recommenders) {
-				klog.V(6).Infof("Ignoring vpaCRD %s in namespace %s as %v recommender doesn't process CRDs implicitly destined to %v recommender", vpaCRD.Name, vpaCRD.Namespace, feeder.recommenderName, DefaultRecommenderName)
+			if implicitDefaultRecommender(mpaCRD.Spec.Recommenders) {
+				klog.V(6).Infof("Ignoring mpaCRD %s in namespace %s as %v recommender doesn't process CRDs implicitly destined to %v recommender", mpaCRD.Name, mpaCRD.Namespace, feeder.recommenderName, DefaultRecommenderName)
 				continue
 			}
-			if !selectsRecommender(vpaCRD.Spec.Recommenders, &feeder.recommenderName) {
-				klog.V(6).Infof("Ignoring vpaCRD %s in namespace %s as current recommender's name %v doesn't appear among its recommenders", vpaCRD.Name, vpaCRD.Namespace, feeder.recommenderName)
+			if !selectsRecommender(mpaCRD.Spec.Recommenders, &feeder.recommenderName) {
+				klog.V(6).Infof("Ignoring mpaCRD %s in namespace %s as current recommender's name %v doesn't appear among its recommenders", mpaCRD.Name, mpaCRD.Namespace, feeder.recommenderName)
 				continue
 			}
 		}
-		vpaCRDs = append(vpaCRDs, vpaCRD)
+		mpaCRDs = append(mpaCRDs, mpaCRD)
 	}
-	return vpaCRDs
+	return mpaCRDs
 }
 
-// Fetch VPA objects and load them into the cluster state.
-func (feeder *clusterStateFeeder) LoadVPAs() {
-	// List VPA API objects.
-	allVpaCRDs, err := feeder.vpaLister.List(labels.Everything())
+// Fetch MPA objects and load them into the cluster state.
+func (feeder *clusterStateFeeder) LoadMPAs() {
+	// List MPA API objects.
+	allMpaCRDs, err := feeder.mpaLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("Cannot list VPAs. Reason: %+v", err)
+		klog.Errorf("Cannot list MPAs. Reason: %+v", err)
 		return
 	}
 
-	// Filter out VPAs that specified recommenders with names not equal to "default"
-	vpaCRDs := filterVPAs(feeder, allVpaCRDs)
+	// Filter out MPAs that specified recommenders with names not equal to "default"
+	mpaCRDs := filterMPAs(feeder, allMpaCRDs)
 
-	klog.V(3).Infof("Fetched %d VPAs.", len(vpaCRDs))
-	// Add or update existing VPAs in the model.
-	vpaKeys := make(map[model.VpaID]bool)
-	for _, vpaCRD := range vpaCRDs {
-		vpaID := model.VpaID{
-			Namespace: vpaCRD.Namespace,
-			VpaName:   vpaCRD.Name,
+	klog.V(3).Infof("Fetched %d MPAs.", len(mpaCRDs))
+	// Add or update existing MPAs in the model.
+	mpaKeys := make(map[model.MpaID]bool)
+	for _, mpaCRD := range mpaCRDs {
+		mpaID := model.MpaID{
+			Namespace: mpaCRD.Namespace,
+			MpaName:   mpaCRD.Name,
 		}
 
-		selector, conditions := feeder.getSelector(vpaCRD)
-		klog.V(4).Infof("Using selector %s for VPA %s/%s", selector.String(), vpaCRD.Namespace, vpaCRD.Name)
+		selector, conditions := feeder.getSelector(mpaCRD)
+		klog.V(4).Infof("Using selector %s for MPA %s/%s", selector.String(), mpaCRD.Namespace, mpaCRD.Name)
 
-		if feeder.clusterState.AddOrUpdateVpa(vpaCRD, selector) == nil {
-			// Successfully added VPA to the model.
-			vpaKeys[vpaID] = true
+		if feeder.clusterState.AddOrUpdateMpa(mpaCRD, selector) == nil {
+			// Successfully added MPA to the model.
+			mpaKeys[mpaID] = true
 
 			for _, condition := range conditions {
 				if condition.delete {
-					delete(feeder.clusterState.Vpas[vpaID].Conditions, condition.conditionType)
+					delete(feeder.clusterState.Mpas[mpaID].Conditions, condition.conditionType)
 				} else {
-					feeder.clusterState.Vpas[vpaID].Conditions.Set(condition.conditionType, true, "", condition.message)
+					feeder.clusterState.Mpas[mpaID].Conditions.Set(condition.conditionType, true, "", condition.message)
 				}
 			}
 		}
 	}
-	// Delete non-existent VPAs from the model.
-	for vpaID := range feeder.clusterState.Vpas {
-		if _, exists := vpaKeys[vpaID]; !exists {
-			klog.V(3).Infof("Deleting VPA %v", vpaID)
-			if err := feeder.clusterState.DeleteVpa(vpaID); err != nil {
-				klog.Errorf("Deleting VPA %v failed: %v", vpaID, err)
+	// Delete non-existent MPAs from the model.
+	for mpaID := range feeder.clusterState.Mpas {
+		if _, exists := mpaKeys[mpaID]; !exists {
+			klog.V(3).Infof("Deleting MPA %v", mpaID)
+			if err := feeder.clusterState.DeleteMpa(mpaID); err != nil {
+				klog.Errorf("Deleting MPA %v failed: %v", mpaID, err)
 			}
 		}
 	}
-	feeder.clusterState.ObservedVpas = vpaCRDs
+	feeder.clusterState.ObservedMpas = mpaCRDs
 }
 
 // Load pod into the cluster state.
@@ -441,7 +441,7 @@ func (feeder *clusterStateFeeder) LoadPods() {
 		}
 	}
 	for _, pod := range pods {
-		if feeder.memorySaveMode && !feeder.matchesVPA(pod) {
+		if feeder.memorySaveMode && !feeder.matchesMPA(pod) {
 			continue
 		}
 		feeder.clusterState.AddOrUpdatePod(pod.ID, pod.PodLabels, pod.Phase)
@@ -491,10 +491,10 @@ Loop:
 	metrics_recommender.RecordAggregateContainerStatesCount(feeder.clusterState.StateMapSize())
 }
 
-func (feeder *clusterStateFeeder) matchesVPA(pod *spec.BasicPodSpec) bool {
-	for vpaKey, vpa := range feeder.clusterState.Vpas {
+func (feeder *clusterStateFeeder) matchesMPA(pod *spec.BasicPodSpec) bool {
+	for mpaKey, mpa := range feeder.clusterState.Mpas {
 		podLabels := labels.Set(pod.PodLabels)
-		if vpaKey.Namespace == pod.ID.Namespace && vpa.PodSelector.Matches(podLabels) {
+		if mpaKey.Namespace == pod.ID.Namespace && mpa.PodSelector.Matches(podLabels) {
 			return true
 		}
 	}
@@ -519,59 +519,58 @@ func newContainerUsageSamplesWithKey(metrics *metrics.ContainerMetricsSnapshot) 
 }
 
 type condition struct {
-	conditionType vpa_types.VerticalPodAutoscalerConditionType
+	conditionType mpa_types.MultidimPodAutoscalerConditionType
 	delete        bool
 	message       string
 }
 
-func (feeder *clusterStateFeeder) validateTargetRef(vpa *vpa_types.VerticalPodAutoscaler) (bool, condition) {
-	//
-	if vpa.Spec.TargetRef == nil {
+func (feeder *clusterStateFeeder) validateTargetRef(mpa *mpa_types.MultidimPodAutoscaler) (bool, condition) {
+	if mpa.Spec.ScaleTargetRef == nil {
 		return false, condition{}
 	}
 	k := controllerfetcher.ControllerKeyWithAPIVersion{
 		ControllerKey: controllerfetcher.ControllerKey{
-			Namespace: vpa.Namespace,
-			Kind:      vpa.Spec.TargetRef.Kind,
-			Name:      vpa.Spec.TargetRef.Name,
+			Namespace: mpa.Namespace,
+			Kind:      mpa.Spec.ScaleTargetRef.Kind,
+			Name:      mpa.Spec.ScaleTargetRef.Name,
 		},
-		ApiVersion: vpa.Spec.TargetRef.APIVersion,
+		ApiVersion: mpa.Spec.ScaleTargetRef.APIVersion,
 	}
 	top, err := feeder.controllerFetcher.FindTopMostWellKnownOrScalable(&k)
 	if err != nil {
-		return false, condition{conditionType: vpa_types.ConfigUnsupported, delete: false, message: fmt.Sprintf("Error checking if target is a topmost well-known or scalable controller: %s", err)}
+		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: fmt.Sprintf("Error checking if target is a topmost well-known or scalable controller: %s", err)}
 	}
 	if top == nil {
-		return false, condition{conditionType: vpa_types.ConfigUnsupported, delete: false, message: fmt.Sprintf("Unknown error during checking if target is a topmost well-known or scalable controller: %s", err)}
+		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: fmt.Sprintf("Unknown error during checking if target is a topmost well-known or scalable controller: %s", err)}
 	}
 	if *top != k {
-		return false, condition{conditionType: vpa_types.ConfigUnsupported, delete: false, message: "The targetRef controller has a parent but it should point to a topmost well-known or scalable controller"}
+		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: "The targetRef controller has a parent but it should point to a topmost well-known or scalable controller"}
 	}
 	return true, condition{}
 }
 
-func (feeder *clusterStateFeeder) getSelector(vpa *vpa_types.VerticalPodAutoscaler) (labels.Selector, []condition) {
-	selector, fetchErr := feeder.selectorFetcher.Fetch(vpa)
+func (feeder *clusterStateFeeder) getSelector(mpa *mpa_types.MultidimPodAutoscaler) (labels.Selector, []condition) {
+	selector, fetchErr := feeder.selectorFetcher.Fetch(mpa)
 	if selector != nil {
-		validTargetRef, unsupportedCondition := feeder.validateTargetRef(vpa)
+		validTargetRef, unsupportedCondition := feeder.validateTargetRef(mpa)
 		if !validTargetRef {
 			return labels.Nothing(), []condition{
 				unsupportedCondition,
-				{conditionType: vpa_types.ConfigDeprecated, delete: true},
+				{conditionType: mpa_types.ConfigDeprecated, delete: true},
 			}
 		}
 		return selector, []condition{
-			{conditionType: vpa_types.ConfigUnsupported, delete: true},
-			{conditionType: vpa_types.ConfigDeprecated, delete: true},
+			{conditionType: mpa_types.ConfigUnsupported, delete: true},
+			{conditionType: mpa_types.ConfigDeprecated, delete: true},
 		}
 	}
 	msg := "Cannot read targetRef"
 	if fetchErr != nil {
-		klog.Errorf("Cannot get target selector from VPA's targetRef. Reason: %+v", fetchErr)
+		klog.Errorf("Cannot get target selector from MPA's targetRef. Reason: %+v", fetchErr)
 		msg = fmt.Sprintf("Cannot read targetRef. Reason: %s", fetchErr.Error())
 	}
 	return labels.Nothing(), []condition{
-		{conditionType: vpa_types.ConfigUnsupported, delete: false, message: msg},
-		{conditionType: vpa_types.ConfigDeprecated, delete: true},
+		{conditionType: mpa_types.ConfigUnsupported, delete: false, message: msg},
+		{conditionType: mpa_types.ConfigDeprecated, delete: true},
 	}
 }
