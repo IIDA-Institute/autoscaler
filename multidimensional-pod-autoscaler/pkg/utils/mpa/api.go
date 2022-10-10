@@ -17,16 +17,40 @@ limitations under the License.
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/types"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
 	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
+
+type patchRecord struct {
+	Op    string      `json:"op,inline"`
+	Path  string      `json:"path,inline"`
+	Value interface{} `json:"value"`
+}
+
+func patchMpa(mpaClient mpa_api.MultidimPodAutoscalerInterface, mpaName string, patches []patchRecord) (result *mpa_types.MultidimPodAutoscaler, err error) {
+	bytes, err := json.Marshal(patches)
+	if err != nil {
+		klog.Errorf("Cannot marshal MPA status patches %+v. Reason: %+v", patches, err)
+		return
+	}
+
+	return mpaClient.Patch(context.TODO(), mpaName, types.JSONPatchType, bytes, meta.PatchOptions{})
+}
 
 // NewMpasLister returns MultidimPodAutoscalerLister configured to fetch all MPA objects from
 // namespace, set namespace to k8sapiv1.NamespaceAll to select all namespaces.
@@ -46,4 +70,43 @@ func NewMpasLister(mpaClient *mpa_clientset.Clientset, stopChannel <-chan struct
 		klog.Info("Initial MPA synced successfully")
 	}
 	return mpaLister
+}
+
+// CreateOrUpdateMpaCheckpoint updates the status field of the MPA Checkpoint API object.
+// If object doesn't exits it is created.
+func CreateOrUpdateMpaCheckpoint(mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointInterface,
+	mpaCheckpoint *mpa_types.MultidimPodAutoscalerCheckpoint) error {
+	patches := make([]patchRecord, 0)
+	patches = append(patches, patchRecord{
+		Op:    "replace",
+		Path:  "/status",
+		Value: mpaCheckpoint.Status,
+	})
+	bytes, err := json.Marshal(patches)
+	if err != nil {
+		return fmt.Errorf("Cannot marshal MPA checkpoint status patches %+v. Reason: %+v", patches, err)
+	}
+	_, err = mpaCheckpointClient.Patch(context.TODO(), mpaCheckpoint.ObjectMeta.Name, types.JSONPatchType, bytes, meta.PatchOptions{})
+	if err != nil && strings.Contains(err.Error(), fmt.Sprintf("\"%s\" not found", mpaCheckpoint.ObjectMeta.Name)) {
+		_, err = mpaCheckpointClient.Create(context.TODO(), mpaCheckpoint, meta.CreateOptions{})
+	}
+	if err != nil {
+		return fmt.Errorf("Cannot save checkpoint for mpa %v container %v. Reason: %+v", mpaCheckpoint.ObjectMeta.Name, mpaCheckpoint.Spec.ContainerName, err)
+	}
+	return nil
+}
+
+// UpdateMpaStatusIfNeeded updates the status field of the MPA API object.
+func UpdateMpaStatusIfNeeded(mpaClient mpa_api.MultidimPodAutoscalerInterface, mpaName string, newStatus,
+	oldStatus *mpa_types.MultidimPodAutoscalerStatus) (result *mpa_types.MultidimPodAutoscaler, err error) {
+	patches := []patchRecord{{
+		Op:    "add",
+		Path:  "/status",
+		Value: *newStatus,
+	}}
+
+	if !apiequality.Semantic.DeepEqual(*oldStatus, *newStatus) {
+		return patchMpa(mpaClient, mpaName, patches)
+	}
+	return nil, nil
 }

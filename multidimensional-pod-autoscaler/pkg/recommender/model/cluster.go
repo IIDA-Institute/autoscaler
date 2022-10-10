@@ -112,6 +112,8 @@ func NewClusterState(gcInterval time.Duration) *ClusterState {
 		Pods:                          make(map[PodID]*PodState),
 		Vpas:                          make(map[VpaID]*Vpa),
 		EmptyVPAs:                     make(map[VpaID]time.Time),
+		Mpas:                          make(map[MpaID]*Mpa),
+		EmptyMPAs:                     make(map[MpaID]time.Time),
 		aggregateStateMap:             make(aggregateContainerStatesMap),
 		labelSetMap:                   make(labelSetMap),
 		lastAggregateContainerStateGC: time.Unix(0, 0),
@@ -487,18 +489,18 @@ func (cluster *ClusterState) getContributiveAggregateStateKeys(controllerFetcher
 // RecordRecommendation marks the state of recommendation in the cluster. We
 // keep track of empty recommendations and log information about them
 // periodically.
-func (cluster *ClusterState) RecordRecommendation(vpa *Vpa, now time.Time) error {
-	if vpa.Recommendation != nil && len(vpa.Recommendation.ContainerRecommendations) > 0 {
-		delete(cluster.EmptyVPAs, vpa.ID)
+func (cluster *ClusterState) RecordRecommendation(mpa *Mpa, now time.Time) error {
+	if mpa.Recommendation != nil && len(mpa.Recommendation.ContainerRecommendations) > 0 {
+		delete(cluster.EmptyMPAs, mpa.ID)
 		return nil
 	}
-	lastLogged, ok := cluster.EmptyVPAs[vpa.ID]
+	lastLogged, ok := cluster.EmptyMPAs[mpa.ID]
 	if !ok {
-		cluster.EmptyVPAs[vpa.ID] = now
+		cluster.EmptyMPAs[mpa.ID] = now
 	} else {
 		if lastLogged.Add(RecommendationMissingMaxDuration).Before(now) {
-			cluster.EmptyVPAs[vpa.ID] = now
-			return fmt.Errorf("VPA %v/%v is missing recommendation for more than %v", vpa.ID.Namespace, vpa.ID.VpaName, RecommendationMissingMaxDuration)
+			cluster.EmptyMPAs[mpa.ID] = now
+			return fmt.Errorf("MPA %v/%v is missing recommendation for more than %v", mpa.ID.Namespace, mpa.ID.MpaName, RecommendationMissingMaxDuration)
 		}
 	}
 	return nil

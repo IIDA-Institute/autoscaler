@@ -24,15 +24,16 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/klog/v2"
 )
 
 // CheckpointWriter persistently stores aggregated historical usage of containers
-// controlled by VPA objects. This state can be restored to initialize the model after restart.
+// controlled by MPA objects. This state can be restored to initialize the model after restart.
 type CheckpointWriter interface {
 	// StoreCheckpoints writes at least minCheckpoints if there are more checkpoints to write.
 	// Checkpoints are written until ctx permits or all checkpoints are written.
@@ -40,44 +41,44 @@ type CheckpointWriter interface {
 }
 
 type checkpointWriter struct {
-	vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
+	mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
 	cluster             *model.ClusterState
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter
-func NewCheckpointWriter(cluster *model.ClusterState, vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter) CheckpointWriter {
+func NewCheckpointWriter(cluster *model.ClusterState, mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter) CheckpointWriter {
 	return &checkpointWriter{
-		vpaCheckpointClient: vpaCheckpointClient,
+		mpaCheckpointClient: mpaCheckpointClient,
 		cluster:             cluster,
 	}
 }
 
-func isFetchingHistory(vpa *model.Vpa) bool {
-	condition, found := vpa.Conditions[vpa_types.FetchingHistory]
+func isFetchingHistory(mpa *model.Mpa) bool {
+	condition, found := mpa.Conditions[mpa_types.FetchingHistory]
 	if !found {
 		return false
 	}
 	return condition.Status == v1.ConditionTrue
 }
 
-func getVpasToCheckpoint(clusterVpas map[model.VpaID]*model.Vpa) []*model.Vpa {
-	vpas := make([]*model.Vpa, 0, len(clusterVpas))
-	for _, vpa := range clusterVpas {
-		if isFetchingHistory(vpa) {
-			klog.V(3).Infof("VPA %s/%s is loading history, skipping checkpoints", vpa.ID.Namespace, vpa.ID.VpaName)
+func getMpasToCheckpoint(clusterMpas map[model.MpaID]*model.Mpa) []*model.Mpa {
+	mpas := make([]*model.Mpa, 0, len(clusterMpas))
+	for _, mpa := range clusterMpas {
+		if isFetchingHistory(mpa) {
+			klog.V(3).Infof("MPA %s/%s is loading history, skipping checkpoints", mpa.ID.Namespace, mpa.ID.MpaName)
 			continue
 		}
-		vpas = append(vpas, vpa)
+		mpas = append(mpas, mpa)
 	}
-	sort.Slice(vpas, func(i, j int) bool {
-		return vpas[i].CheckpointWritten.Before(vpas[j].CheckpointWritten)
+	sort.Slice(mpas, func(i, j int) bool {
+		return mpas[i].CheckpointWritten.Before(mpas[j].CheckpointWritten)
 	})
-	return vpas
+	return mpas
 }
 
 func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.Time, minCheckpoints int) error {
-	vpas := getVpasToCheckpoint(writer.cluster.Vpas)
-	for _, vpa := range vpas {
+	mpas := getMpasToCheckpoint(writer.cluster.Mpas)
+	for _, mpa := range mpas {
 
 		// Draining ctx.Done() channel. ctx.Err() will be checked if timeout occurred, but minCheckpoints have
 		// to be written before return from this function.
@@ -90,30 +91,30 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 			return ctx.Err()
 		}
 
-		aggregateContainerStateMap := buildAggregateContainerStateMap(vpa, writer.cluster, now)
+		aggregateContainerStateMap := buildAggregateContainerStateMap(mpa, writer.cluster, now)
 		for container, aggregatedContainerState := range aggregateContainerStateMap {
 			containerCheckpoint, err := aggregatedContainerState.SaveToCheckpoint()
 			if err != nil {
-				klog.Errorf("Cannot serialize checkpoint for vpa %v container %v. Reason: %+v", vpa.ID.VpaName, container, err)
+				klog.Errorf("Cannot serialize checkpoint for mpa %v container %v. Reason: %+v", mpa.ID.MpaName, container, err)
 				continue
 			}
-			checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
-			vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
+			checkpointName := fmt.Sprintf("%s-%s", mpa.ID.MpaName, container)
+			mpaCheckpoint := mpa_types.MultidimPodAutoscalerCheckpoint{
 				ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
 				Spec: vpa_types.VerticalPodAutoscalerCheckpointSpec{
 					ContainerName: container,
-					VPAObjectName: vpa.ID.VpaName,
+					VPAObjectName: mpa.ID.MpaName,
 				},
 				Status: *containerCheckpoint,
 			}
-			err = api_util.CreateOrUpdateVpaCheckpoint(writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace), &vpaCheckpoint)
+			err = api_util.CreateOrUpdateMpaCheckpoint(writer.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(mpa.ID.Namespace), &mpaCheckpoint)
 			if err != nil {
-				klog.Errorf("Cannot save VPA %s/%s checkpoint for %s. Reason: %+v",
-					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName, err)
+				klog.Errorf("Cannot save MPA %s/%s checkpoint for %s. Reason: %+v",
+					mpa.ID.Namespace, mpaCheckpoint.Spec.VPAObjectName, mpaCheckpoint.Spec.ContainerName, err)
 			} else {
-				klog.V(3).Infof("Saved VPA %s/%s checkpoint for %s",
-					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
-				vpa.CheckpointWritten = now
+				klog.V(3).Infof("Saved MPA %s/%s checkpoint for %s",
+					mpa.ID.Namespace, mpaCheckpoint.Spec.VPAObjectName, mpaCheckpoint.Spec.ContainerName)
+				mpa.CheckpointWritten = now
 			}
 			minCheckpoints--
 		}
@@ -122,18 +123,18 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 }
 
 // Build the AggregateContainerState for the purpose of the checkpoint. This is an aggregation of state of all
-// containers that belong to pods matched by the VPA.
+// containers that belong to pods matched by the MPA.
 // Note however that we exclude the most recent memory peak for each container (see below).
-func buildAggregateContainerStateMap(vpa *model.Vpa, cluster *model.ClusterState, now time.Time) map[string]*model.AggregateContainerState {
-	aggregateContainerStateMap := vpa.AggregateStateByContainerName()
+func buildAggregateContainerStateMap(mpa *model.Mpa, cluster *model.ClusterState, now time.Time) map[string]*model.AggregateContainerState {
+	aggregateContainerStateMap := mpa.AggregateStateByContainerName()
 	// Note: the memory peak from the current (ongoing) aggregation interval is not included in the
 	// checkpoint to avoid having multiple peaks in the same interval after the state is restored from
 	// the checkpoint. Therefore we are extracting the current peak from all containers.
-	// TODO: Avoid the nested loop over all containers for each VPA.
+	// TODO: Avoid the nested loop over all containers for each MPA.
 	for _, pod := range cluster.Pods {
 		for containerName, container := range pod.Containers {
 			aggregateKey := cluster.MakeAggregateStateKey(pod, containerName)
-			if vpa.UsesAggregation(aggregateKey) {
+			if mpa.UsesAggregation(aggregateKey) {
 				if aggregateContainerState, exists := aggregateContainerStateMap[containerName]; exists {
 					subtractCurrentContainerMemoryPeak(aggregateContainerState, container, now)
 				}

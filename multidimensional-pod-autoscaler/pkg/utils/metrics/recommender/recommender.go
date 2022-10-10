@@ -23,8 +23,9 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 )
 
@@ -39,9 +40,10 @@ var (
 type apiVersion string
 
 const (
-	v1beta1 apiVersion = "v1beta1"
-	v1beta2 apiVersion = "v1beta2"
-	v1      apiVersion = "v1"
+	v1beta1  apiVersion = "v1beta1"
+	v1beta2  apiVersion = "v1beta2"
+	v1       apiVersion = "v1"
+	v1alpha1 apiVersion = "v1alpha1"
 )
 
 var (
@@ -50,6 +52,14 @@ var (
 			Namespace: metricsNamespace,
 			Name:      "vpa_objects_count",
 			Help:      "Number of VPA objects present in the cluster.",
+		}, []string{"update_mode", "has_recommendation", "api", "matches_pods", "unsupported_config"},
+	)
+
+	mpaObjectCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricsNamespace,
+			Name:      "mpa_objects_count",
+			Help:      "Number of MPA objects present in the cluster.",
 		}, []string{"update_mode", "has_recommendation", "api", "matches_pods", "unsupported_config"},
 	)
 
@@ -166,6 +176,28 @@ func (oc *ObjectCounter) Add(vpa *model.Vpa) {
 		apiVersion:        api,
 		matchesPods:       vpa.HasMatchedPods(),
 		unsupportedConfig: vpa.Conditions.ConditionActive(vpa_types.ConfigUnsupported),
+	}
+	oc.cnt[key]++
+}
+
+// Add updates the helper state to include the given MPA object
+func (oc *ObjectCounter) AddMPA(mpa *model.Mpa) {
+	mode := string(vpa_types.UpdateModeAuto)
+	if mpa.UpdateMode != nil && string(*mpa.UpdateMode) != "" {
+		mode = string(*mpa.UpdateMode)
+	}
+	// TODO: Maybe report v1 version as well.
+	api := v1beta2
+	if mpa.IsV1Beta1API {
+		api = v1beta1
+	}
+
+	key := objectCounterKey{
+		mode:              mode,
+		has:               mpa.HasRecommendation(),
+		apiVersion:        api,
+		matchesPods:       mpa.HasMatchedPods(),
+		unsupportedConfig: mpa.Conditions.ConditionActive(mpa_types.ConfigUnsupported),
 	}
 	oc.cnt[key]++
 }

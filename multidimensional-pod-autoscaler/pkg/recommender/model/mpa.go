@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"time"
 
 	autoscaling "k8s.io/api/autoscaling/v1"
@@ -9,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 )
 
@@ -39,6 +41,25 @@ func (conditionsMap *mpaConditionsMap) Set(
 	}
 	(*conditionsMap)[conditionType] = condition
 	return conditionsMap
+}
+
+func (conditionsMap *mpaConditionsMap) AsList() []mpa_types.MultidimPodAutoscalerCondition {
+	conditions := make([]mpa_types.MultidimPodAutoscalerCondition, 0, len(*conditionsMap))
+	for _, condition := range *conditionsMap {
+		conditions = append(conditions, condition)
+	}
+
+	// Sort conditions by type to avoid elements floating on the list
+	sort.Slice(conditions, func(i, j int) bool {
+		return conditions[i].Type < conditions[j].Type
+	})
+
+	return conditions
+}
+
+func (conditionsMap *mpaConditionsMap) ConditionActive(conditionType mpa_types.MultidimPodAutoscalerConditionType) bool {
+	condition, found := (*conditionsMap)[conditionType]
+	return found && condition.Status == apiv1.ConditionTrue
 }
 
 // Mpa (Multidimensional Pod Autoscaler) object is responsible for horizontal and vertical scaling
@@ -148,4 +169,87 @@ func (mpa *Mpa) SetUpdateMode(updatePolicy *mpa_types.PodUpdatePolicy) {
 	for _, state := range mpa.aggregateContainerStates {
 		state.UpdateMode = mpa.UpdateMode
 	}
+}
+
+// MergeCheckpointedState adds checkpointed MPA aggregations to the given aggregateStateMap.
+func (mpa *Mpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameToAggregateStateMap) {
+	for containerName, aggregation := range mpa.ContainersInitialAggregateState {
+		aggregateContainerState, found := aggregateContainerStateMap[containerName]
+		if !found {
+			aggregateContainerState = NewAggregateContainerState()
+			aggregateContainerStateMap[containerName] = aggregateContainerState
+		}
+		aggregateContainerState.MergeContainerState(aggregation)
+	}
+}
+
+// AggregateStateByContainerName returns a map from container name to the aggregated state
+// of all containers with that name, belonging to pods matched by the MPA.
+func (mpa *Mpa) AggregateStateByContainerName() ContainerNameToAggregateStateMap {
+	containerNameToAggregateStateMap := AggregateStateByContainerName(mpa.aggregateContainerStates)
+	mpa.MergeCheckpointedState(containerNameToAggregateStateMap)
+	return containerNameToAggregateStateMap
+}
+
+// HasRecommendation returns if the MPA object contains any recommendation
+func (mpa *Mpa) HasRecommendation() bool {
+	return (mpa.Recommendation != nil) && len(mpa.Recommendation.ContainerRecommendations) > 0
+}
+
+// UpdateRecommendation updates the recommended resources in the MPA and its
+// aggregations with the given recommendation.
+func (mpa *Mpa) UpdateRecommendation(recommendation *vpa_types.RecommendedPodResources) {
+	for _, containerRecommendation := range recommendation.ContainerRecommendations {
+		for container, state := range mpa.aggregateContainerStates {
+			if container.ContainerName() == containerRecommendation.ContainerName {
+				metrics_quality.ObserveRecommendationChange(state.LastRecommendation, containerRecommendation.UncappedTarget, mpa.UpdateMode, mpa.PodCount)
+				state.LastRecommendation = containerRecommendation.UncappedTarget
+			}
+		}
+	}
+	mpa.Recommendation = recommendation
+}
+
+// UpdateConditions updates the conditions of MPA objects based on it's state.
+// PodsMatched is passed to indicate if there are currently active pods in the
+// cluster matching this MPA.
+func (mpa *Mpa) UpdateConditions(podsMatched bool) {
+	reason := ""
+	msg := ""
+	if podsMatched {
+		delete(mpa.Conditions, mpa_types.NoPodsMatched)
+	} else {
+		reason = "NoPodsMatched"
+		msg = "No pods match this MPA object"
+		mpa.Conditions.Set(mpa_types.NoPodsMatched, true, reason, msg)
+	}
+	if mpa.HasRecommendation() {
+		mpa.Conditions.Set(mpa_types.RecommendationProvided, true, "", "")
+	} else {
+		mpa.Conditions.Set(mpa_types.RecommendationProvided, false, reason, msg)
+	}
+
+}
+
+// HasMatchedPods returns true if there are are currently active pods in the
+// cluster matching this MPA, based on conditions. UpdateConditions should be
+// called first.
+func (mpa *Mpa) HasMatchedPods() bool {
+	noPodsMatched, found := mpa.Conditions[mpa_types.NoPodsMatched]
+	if found && noPodsMatched.Status == apiv1.ConditionTrue {
+		return false
+	}
+	return true
+}
+
+// AsStatus returns this objects equivalent of MPA Status. UpdateConditions
+// should be called first.
+func (mpa *Mpa) AsStatus() *mpa_types.MultidimPodAutoscalerStatus {
+	status := &mpa_types.MultidimPodAutoscalerStatus{
+		Conditions: mpa.Conditions.AsList(),
+	}
+	if mpa.Recommendation != nil {
+		status.Recommendation = mpa.Recommendation
+	}
+	return status
 }

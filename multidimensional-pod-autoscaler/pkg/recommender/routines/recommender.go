@@ -22,15 +22,16 @@ import (
 	"sort"
 	"time"
 
+	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/checkpoint"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/logic"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	metrics_recommender "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/metrics/recommender"
+	mpa_utils "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
@@ -50,19 +51,19 @@ const (
 var (
 	checkpointsWriteTimeout = flag.Duration("checkpoints-timeout", time.Minute, `Timeout for writing checkpoints since the start of the recommender's main loop`)
 	minCheckpointsPerRun    = flag.Int("min-checkpoints", 10, "Minimum number of checkpoints to write per recommender's main loop")
-	memorySaver             = flag.Bool("memory-saver", false, `If true, only track pods which have an associated VPA`)
+	memorySaver             = flag.Bool("memory-saver", false, `If true, only track pods which have an associated MPA`)
 )
 
 // Recommender recommend resources for certain containers, based on utilization periodically got from metrics api.
 type Recommender interface {
-	// RunOnce performs one iteration of recommender duties followed by update of recommendations in VPA objects.
+	// RunOnce performs one iteration of recommender duties followed by update of recommendations in MPA objects.
 	RunOnce()
 	// GetClusterState returns ClusterState used by Recommender
 	GetClusterState() *model.ClusterState
 	// GetClusterStateFeeder returns ClusterStateFeeder used by Recommender
 	GetClusterStateFeeder() input.ClusterStateFeeder
-	// UpdateVPAs computes recommendations and sends VPAs status updates to API Server
-	UpdateVPAs()
+	// UpdateMPAs computes recommendations and sends MPAs status updates to API Server
+	UpdateMPAs()
 	// MaintainCheckpoints stores current checkpoints in API Server and garbage collect old ones
 	// MaintainCheckpoints writes at least minCheckpoints if there are more checkpoints to write.
 	// Checkpoints are written until ctx permits or all checkpoints are written.
@@ -76,7 +77,7 @@ type recommender struct {
 	checkpointsGCInterval         time.Duration
 	controllerFetcher             controllerfetcher.ControllerFetcher
 	lastCheckpointGC              time.Time
-	vpaClient                     vpa_api.VerticalPodAutoscalersGetter
+	mpaClient                     mpa_api.MultidimPodAutoscalersGetter
 	podResourceRecommender        logic.PodResourceRecommender
 	useCheckpoints                bool
 	lastAggregateContainerStateGC time.Time
@@ -90,50 +91,50 @@ func (r *recommender) GetClusterStateFeeder() input.ClusterStateFeeder {
 	return r.clusterStateFeeder
 }
 
-// Updates VPA CRD objects' statuses.
-func (r *recommender) UpdateVPAs() {
+// Updates MPA CRD objects' statuses.
+func (r *recommender) UpdateMPAs() {
 	cnt := metrics_recommender.NewObjectCounter()
 	defer cnt.Observe()
 
-	for _, observedVpa := range r.clusterState.ObservedVpas {
-		key := model.VpaID{
-			Namespace: observedVpa.Namespace,
-			VpaName:   observedVpa.Name,
+	for _, observedMpa := range r.clusterState.ObservedMpas {
+		key := model.MpaID{
+			Namespace: observedMpa.Namespace,
+			MpaName:   observedMpa.Name,
 		}
 
-		vpa, found := r.clusterState.Vpas[key]
+		mpa, found := r.clusterState.Mpas[key]
 		if !found {
 			continue
 		}
-		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
-		had := vpa.HasRecommendation()
-		vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
-		if vpa.HasRecommendation() && !had {
-			metrics_recommender.ObserveRecommendationLatency(vpa.Created)
+		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
+		had := mpa.HasRecommendation()
+		mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
+		if mpa.HasRecommendation() && !had {
+			metrics_recommender.ObserveRecommendationLatency(mpa.Created)
 		}
-		hasMatchingPods := vpa.PodCount > 0
-		vpa.UpdateConditions(hasMatchingPods)
-		if err := r.clusterState.RecordRecommendation(vpa, time.Now()); err != nil {
+		hasMatchingPods := mpa.PodCount > 0
+		mpa.UpdateConditions(hasMatchingPods)
+		if err := r.clusterState.RecordRecommendation(mpa, time.Now()); err != nil {
 			klog.Warningf("%v", err)
 			if klog.V(4).Enabled() {
-				klog.Infof("VPA dump")
-				klog.Infof("%+v", vpa)
+				klog.Infof("MPA dump")
+				klog.Infof("%+v", mpa)
 				klog.Infof("HasMatchingPods: %v", hasMatchingPods)
-				klog.Infof("PodCount: %v", vpa.PodCount)
-				pods := r.clusterState.GetMatchingPods(vpa)
+				klog.Infof("PodCount: %v", mpa.PodCount)
+				pods := r.clusterState.GetMatchingPodsForMPA(mpa)
 				klog.Infof("MatchingPods: %+v", pods)
-				if len(pods) != vpa.PodCount {
-					klog.Errorf("ClusterState pod count and matching pods disagree for vpa %v/%v", vpa.ID.Namespace, vpa.ID.VpaName)
+				if len(pods) != mpa.PodCount {
+					klog.Errorf("ClusterState pod count and matching pods disagree for mpa %v/%v", mpa.ID.Namespace, mpa.ID.MpaName)
 				}
 			}
 		}
-		cnt.Add(vpa)
+		cnt.AddMPA(mpa)
 
-		_, err := vpa_utils.UpdateVpaStatusIfNeeded(
-			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status)
+		_, err := mpa_utils.UpdateMpaStatusIfNeeded(
+			r.mpaClient.MultidimPodAutoscalers(mpa.ID.Namespace), mpa.ID.MpaName, mpa.AsStatus(), &observedMpa.Status)
 		if err != nil {
 			klog.Errorf(
-				"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
+				"Cannot update MPA %v object. Reason: %+v", mpa.ID.MpaName, err)
 		}
 	}
 }
@@ -142,7 +143,7 @@ func (r *recommender) UpdateVPAs() {
 // resources, setting the UncappedTarget to the calculated recommended target
 // and if necessary, capping the Target, LowerBound and UpperBound according
 // to the ResourcePolicy.
-func getCappedRecommendation(vpaID model.VpaID, resources logic.RecommendedPodResources,
+func getCappedRecommendation(mpaID model.MpaID, resources logic.RecommendedPodResources,
 	policy *vpa_types.PodResourcePolicy) *vpa_types.RecommendedPodResources {
 	containerResources := make([]vpa_types.RecommendedContainerResources, 0, len(resources))
 	// Sort the container names from the map. This is because maps are an
@@ -166,9 +167,10 @@ func getCappedRecommendation(vpaID model.VpaID, resources logic.RecommendedPodRe
 	recommendation := &vpa_types.RecommendedPodResources{
 		ContainerRecommendations: containerResources,
 	}
+	// Keep the original VPA policy for vertical autoscaling.
 	cappedRecommendation, err := vpa_utils.ApplyVPAPolicy(recommendation, policy)
 	if err != nil {
-		klog.Errorf("Failed to apply policy for VPA %v/%v: %v", vpaID.Namespace, vpaID.VpaName, err)
+		klog.Errorf("Failed to apply policy for MPA %v/%v: %v", mpaID.Namespace, mpaID.MpaName, err)
 		return recommendation
 	}
 	return cappedRecommendation
@@ -197,18 +199,18 @@ func (r *recommender) RunOnce() {
 
 	klog.V(3).Infof("Recommender Run")
 
-	r.clusterStateFeeder.LoadVPAs()
-	timer.ObserveStep("LoadVPAs")
+	r.clusterStateFeeder.LoadMPAs()
+	timer.ObserveStep("LoadMPAs")
 
 	r.clusterStateFeeder.LoadPods()
 	timer.ObserveStep("LoadPods")
 
 	r.clusterStateFeeder.LoadRealTimeMetrics()
 	timer.ObserveStep("LoadMetrics")
-	klog.V(3).Infof("ClusterState is tracking %v PodStates and %v VPAs", len(r.clusterState.Pods), len(r.clusterState.Vpas))
+	klog.V(3).Infof("ClusterState is tracking %v PodStates and %v MPAs", len(r.clusterState.Pods), len(r.clusterState.Mpas))
 
-	r.UpdateVPAs()
-	timer.ObserveStep("UpdateVPAs")
+	r.UpdateMPAs()
+	timer.ObserveStep("UpdateMPAs")
 
 	r.MaintainCheckpoints(ctx, *minCheckpointsPerRun)
 	timer.ObserveStep("MaintainCheckpoints")
@@ -226,7 +228,7 @@ type RecommenderFactory struct {
 	ControllerFetcher      controllerfetcher.ControllerFetcher
 	CheckpointWriter       checkpoint.CheckpointWriter
 	PodResourceRecommender logic.PodResourceRecommender
-	VpaClient              vpa_api.VerticalPodAutoscalersGetter
+	MpaClient              mpa_api.MultidimPodAutoscalersGetter
 
 	CheckpointsGCInterval time.Duration
 	UseCheckpoints        bool
@@ -242,7 +244,7 @@ func (c RecommenderFactory) Make() Recommender {
 		checkpointsGCInterval:         c.CheckpointsGCInterval,
 		controllerFetcher:             c.ControllerFetcher,
 		useCheckpoints:                c.UseCheckpoints,
-		vpaClient:                     c.VpaClient,
+		mpaClient:                     c.MpaClient,
 		podResourceRecommender:        c.PodResourceRecommender,
 		lastAggregateContainerStateGC: time.Now(),
 		lastCheckpointGC:              time.Now(),
@@ -263,8 +265,8 @@ func NewRecommender(config *rest.Config, checkpointsGCInterval time.Duration, us
 		ClusterState:           clusterState,
 		ClusterStateFeeder:     input.NewClusterStateFeeder(config, clusterState, *memorySaver, namespace, "default-metrics-client", recommenderName),
 		ControllerFetcher:      controllerFetcher,
-		CheckpointWriter:       checkpoint.NewCheckpointWriter(clusterState, vpa_clientset.NewForConfigOrDie(config).AutoscalingV1()),
-		VpaClient:              vpa_clientset.NewForConfigOrDie(config).AutoscalingV1(),
+		CheckpointWriter:       checkpoint.NewCheckpointWriter(clusterState, mpa_clientset.NewForConfigOrDie(config).AutoscalingV1alpha1()),
+		MpaClient:              mpa_clientset.NewForConfigOrDie(config).AutoscalingV1alpha1(),
 		PodResourceRecommender: logic.CreatePodResourceRecommender(),
 		CheckpointsGCInterval:  checkpointsGCInterval,
 		UseCheckpoints:         useCheckpoints,

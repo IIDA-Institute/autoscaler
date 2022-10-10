@@ -23,8 +23,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -39,9 +39,9 @@ var (
 		PodID:         testPodID1,
 		ContainerName: "container-1",
 	}
-	testVpaID1 = model.VpaID{
+	testMpaID1 = model.MpaID{
 		Namespace: "namespace-1",
-		VpaName:   "vpa-1",
+		MpaName:   "mpa-1",
 	}
 	testLabels      = map[string]string{"label-1": "value-1"}
 	testSelectorStr = "label-1 = value-1"
@@ -53,17 +53,17 @@ var (
 
 const testGcPeriod = time.Minute
 
-func addVpa(t *testing.T, cluster *model.ClusterState, vpaID model.VpaID, selector string) *model.Vpa {
-	var apiObject vpa_types.VerticalPodAutoscaler
-	apiObject.Namespace = vpaID.Namespace
-	apiObject.Name = vpaID.VpaName
+func addMpa(t *testing.T, cluster *model.ClusterState, mpaID model.MpaID, selector string) *model.Mpa {
+	var apiObject mpa_types.MultidimPodAutoscaler
+	apiObject.Namespace = mpaID.Namespace
+	apiObject.Name = mpaID.MpaName
 	labelSelector, _ := metav1.ParseToLabelSelector(selector)
 	parsedSelector, _ := metav1.LabelSelectorAsSelector(labelSelector)
-	err := cluster.AddOrUpdateVpa(&apiObject, parsedSelector)
+	err := cluster.AddOrUpdateMpa(&apiObject, parsedSelector)
 	if err != nil {
-		t.Fatalf("AddOrUpdateVpa() failed: %v", err)
+		t.Fatalf("AddOrUpdateMpa() failed: %v", err)
 	}
-	return cluster.Vpas[vpaID]
+	return cluster.Mpas[mpaID]
 }
 
 func TestMergeContainerStateForCheckpointDropsRecentMemoryPeak(t *testing.T) {
@@ -79,17 +79,17 @@ func TestMergeContainerStateForCheckpointDropsRecentMemoryPeak(t *testing.T) {
 		Request:      testRequest[model.ResourceMemory],
 		Resource:     model.ResourceMemory,
 	})
-	vpa := addVpa(t, cluster, testVpaID1, testSelectorStr)
+	mpa := addMpa(t, cluster, testMpaID1, testSelectorStr)
 
 	// Verify that the current peak is excluded from the aggregation.
-	aggregateContainerStateMap := buildAggregateContainerStateMap(vpa, cluster, timeNow)
+	aggregateContainerStateMap := buildAggregateContainerStateMap(mpa, cluster, timeNow)
 	if assert.Contains(t, aggregateContainerStateMap, "container-1") {
 		assert.True(t, aggregateContainerStateMap["container-1"].AggregateMemoryPeaks.IsEmpty(),
 			"Current peak was not excluded from the aggregation.")
 	}
 	// Verify that an old peak is not excluded from the aggregation.
 	timeNow = timeNow.Add(model.GetAggregationsConfig().MemoryAggregationInterval)
-	aggregateContainerStateMap = buildAggregateContainerStateMap(vpa, cluster, timeNow)
+	aggregateContainerStateMap = buildAggregateContainerStateMap(mpa, cluster, timeNow)
 	if assert.Contains(t, aggregateContainerStateMap, "container-1") {
 		assert.False(t, aggregateContainerStateMap["container-1"].AggregateMemoryPeaks.IsEmpty(),
 			"Old peak should not be excluded from the aggregation.")
@@ -99,19 +99,19 @@ func TestMergeContainerStateForCheckpointDropsRecentMemoryPeak(t *testing.T) {
 func TestIsFetchingHistory(t *testing.T) {
 
 	testCases := []struct {
-		vpa               model.Vpa
+		mpa               model.Mpa
 		isFetchingHistory bool
 	}{
 		{
-			vpa:               model.Vpa{},
+			mpa:               model.Mpa{},
 			isFetchingHistory: false,
 		},
 		{
-			vpa: model.Vpa{
+			mpa: model.Mpa{
 				PodSelector: nil,
-				Conditions: map[vpa_types.VerticalPodAutoscalerConditionType]vpa_types.VerticalPodAutoscalerCondition{
-					vpa_types.FetchingHistory: {
-						Type:   vpa_types.FetchingHistory,
+				Conditions: map[mpa_types.MultidimPodAutoscalerConditionType]mpa_types.MultidimPodAutoscalerCondition{
+					mpa_types.FetchingHistory: {
+						Type:   mpa_types.FetchingHistory,
 						Status: v1.ConditionFalse,
 					},
 				},
@@ -119,11 +119,11 @@ func TestIsFetchingHistory(t *testing.T) {
 			isFetchingHistory: false,
 		},
 		{
-			vpa: model.Vpa{
+			mpa: model.Mpa{
 				PodSelector: nil,
-				Conditions: map[vpa_types.VerticalPodAutoscalerConditionType]vpa_types.VerticalPodAutoscalerCondition{
-					vpa_types.FetchingHistory: {
-						Type:   vpa_types.FetchingHistory,
+				Conditions: map[mpa_types.MultidimPodAutoscalerConditionType]mpa_types.MultidimPodAutoscalerCondition{
+					mpa_types.FetchingHistory: {
+						Type:   mpa_types.FetchingHistory,
 						Status: v1.ConditionTrue,
 					},
 				},
@@ -133,41 +133,41 @@ func TestIsFetchingHistory(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		assert.Equalf(t, tc.isFetchingHistory, isFetchingHistory(&tc.vpa), "%+v should have %v as isFetchingHistoryResult", tc.vpa, tc.isFetchingHistory)
+		assert.Equalf(t, tc.isFetchingHistory, isFetchingHistory(&tc.mpa), "%+v should have %v as isFetchingHistoryResult", tc.mpa, tc.isFetchingHistory)
 	}
 }
 
-func TestGetVpasToCheckpointSorts(t *testing.T) {
+func TestGetMpasToCheckpointSorts(t *testing.T) {
 
 	time1 := time.Unix(10000, 0)
 	time2 := time.Unix(20000, 0)
 
-	genVpaID := func(index int) model.VpaID {
-		return model.VpaID{
-			VpaName: fmt.Sprintf("vpa-%d", index),
+	genMpaID := func(index int) model.MpaID {
+		return model.MpaID{
+			MpaName: fmt.Sprintf("mpa-%d", index),
 		}
 	}
-	vpa0 := &model.Vpa{
-		ID: genVpaID(0),
+	mpa0 := &model.Mpa{
+		ID: genMpaID(0),
 	}
-	vpa1 := &model.Vpa{
-		ID:                genVpaID(1),
+	mpa1 := &model.Mpa{
+		ID:                genMpaID(1),
 		CheckpointWritten: time1,
 	}
-	vpa2 := &model.Vpa{
-		ID:                genVpaID(2),
+	mpa2 := &model.Mpa{
+		ID:                genMpaID(2),
 		CheckpointWritten: time2,
 	}
-	vpas := make(map[model.VpaID]*model.Vpa)
-	addVpa := func(vpa *model.Vpa) {
-		vpas[vpa.ID] = vpa
+	mpas := make(map[model.MpaID]*model.Mpa)
+	addMpa := func(mpa *model.Mpa) {
+		mpas[mpa.ID] = mpa
 	}
-	addVpa(vpa2)
-	addVpa(vpa0)
-	addVpa(vpa1)
-	result := getVpasToCheckpoint(vpas)
-	assert.Equal(t, genVpaID(0), result[0].ID)
-	assert.Equal(t, genVpaID(1), result[1].ID)
-	assert.Equal(t, genVpaID(2), result[2].ID)
+	addMpa(mpa2)
+	addMpa(mpa0)
+	addMpa(mpa1)
+	result := getMpasToCheckpoint(mpas)
+	assert.Equal(t, genMpaID(0), result[0].ID)
+	assert.Equal(t, genMpaID(1), result[1].ID)
+	assert.Equal(t, genMpaID(2), result[2].ID)
 
 }

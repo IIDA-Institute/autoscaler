@@ -17,18 +17,19 @@ limitations under the License.
 package routines
 
 import (
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	api_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 )
 
 // GetContainerNameToAggregateStateMap returns ContainerNameToAggregateStateMap for pods.
-func GetContainerNameToAggregateStateMap(vpa *model.Vpa) model.ContainerNameToAggregateStateMap {
-	containerNameToAggregateStateMap := vpa.AggregateStateByContainerName()
+// Updated to integrate with the MPA API.
+func GetContainerNameToAggregateStateMap(mpa *model.Mpa) model.ContainerNameToAggregateStateMap {
+	containerNameToAggregateStateMap := mpa.AggregateStateByContainerName()
 	filteredContainerNameToAggregateStateMap := make(model.ContainerNameToAggregateStateMap)
 
 	for containerName, aggregatedContainerState := range containerNameToAggregateStateMap {
-		containerResourcePolicy := api_utils.GetContainerResourcePolicy(containerName, vpa.ResourcePolicy)
+		containerResourcePolicy := api_utils.GetContainerResourcePolicy(containerName, mpa.ResourcePolicy)
 		autoscalingDisabled := containerResourcePolicy != nil && containerResourcePolicy.Mode != nil &&
 			*containerResourcePolicy.Mode == vpa_types.ContainerScalingModeOff
 		if !autoscalingDisabled && aggregatedContainerState.TotalSamplesCount > 0 {

@@ -20,7 +20,7 @@ import (
 	"math"
 	"time"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 )
 
 // TODO: Split the estimator to have a separate estimator object for CPU and memory.

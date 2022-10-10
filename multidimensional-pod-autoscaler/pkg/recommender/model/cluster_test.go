@@ -26,9 +26,10 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 	"k8s.io/klog/v2"
 )
 
@@ -38,7 +39,9 @@ var (
 	testPodID4      = PodID{"namespace-1", "pod-4"}
 	testContainerID = ContainerID{testPodID, "container-1"}
 	testVpaID       = VpaID{"namespace-1", "vpa-1"}
+	testMpaID       = MpaID{"namespace-1", "mpa-1"}
 	testAnnotations = vpaAnnotationsMap{"key-1": "value-1"}
+	testMPAAnnotations = mpaAnnotationsMap{"key-1": "value-1"}
 	testLabels      = map[string]string{"label-1": "value-1"}
 	emptyLabels     = map[string]string{}
 	testSelectorStr = "label-1 = value-1"
@@ -333,6 +336,12 @@ func addVpa(cluster *ClusterState, id VpaID, annotations vpaAnnotationsMap, sele
 	return addVpaObject(cluster, id, apiObject, selector)
 }
 
+func addMpa(cluster *ClusterState, id MpaID, annotations mpaAnnotationsMap, selector string, scaleTargetRef *autoscaling.CrossVersionObjectReference) *Mpa {
+	apiObject := test.MultidimPodAutoscaler().WithNamespace(id.Namespace).
+		WithName(id.MpaName).WithContainer(testContainerID.ContainerName).WithAnnotations(annotations).WithScaleTargetRef(scaleTargetRef).Get()
+	return addMpaObject(cluster, id, apiObject, selector)
+}
+
 func addVpaObject(cluster *ClusterState, id VpaID, vpa *vpa_types.VerticalPodAutoscaler, selector string) *Vpa {
 	labelSelector, _ := metav1.ParseToLabelSelector(selector)
 	parsedSelector, _ := metav1.LabelSelectorAsSelector(labelSelector)
@@ -341,6 +350,16 @@ func addVpaObject(cluster *ClusterState, id VpaID, vpa *vpa_types.VerticalPodAut
 		klog.Fatalf("AddOrUpdateVpa() failed: %v", err)
 	}
 	return cluster.Vpas[id]
+}
+
+func addMpaObject(cluster *ClusterState, id MpaID, mpa *mpa_types.MultidimPodAutoscaler, selector string) *Mpa {
+	labelSelector, _ := metav1.ParseToLabelSelector(selector)
+	parsedSelector, _ := metav1.LabelSelectorAsSelector(labelSelector)
+	err := cluster.AddOrUpdateMpa(mpa, parsedSelector)
+	if err != nil {
+		klog.Fatalf("AddOrUpdateMpa() failed: %v", err)
+	}
+	return cluster.Mpas[id]
 }
 
 func addTestVpa(cluster *ClusterState) *Vpa {
@@ -700,22 +719,22 @@ func TestRecordRecommendation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
-			vpa := addVpa(cluster, testVpaID, testAnnotations, testSelectorStr, testTargetRef)
-			cluster.Vpas[testVpaID].Recommendation = tc.recommendation
+			mpa := addMpa(cluster, testMpaID, testMPAAnnotations, testSelectorStr, testTargetRef)
+			cluster.Mpas[testMpaID].Recommendation = tc.recommendation
 			if !tc.lastLogged.IsZero() {
-				cluster.EmptyVPAs[testVpaID] = tc.lastLogged
+				cluster.EmptyMPAs[testMpaID] = tc.lastLogged
 			}
 
-			err := cluster.RecordRecommendation(vpa, tc.now)
+			err := cluster.RecordRecommendation(mpa, tc.now)
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
 			} else {
 				assert.NoError(t, err)
 				if tc.expectedEmpty {
-					assert.Contains(t, cluster.EmptyVPAs, testVpaID)
-					assert.Equal(t, cluster.EmptyVPAs[testVpaID], tc.expectedLastLogged)
+					assert.Contains(t, cluster.EmptyMPAs, testMpaID)
+					assert.Equal(t, cluster.EmptyMPAs[testMpaID], tc.expectedLastLogged)
 				} else {
-					assert.NotContains(t, cluster.EmptyVPAs, testVpaID)
+					assert.NotContains(t, cluster.EmptyMPAs, testMpaID)
 				}
 			}
 		})

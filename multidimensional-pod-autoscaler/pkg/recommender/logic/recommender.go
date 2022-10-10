@@ -19,7 +19,7 @@ package logic
 import (
 	"flag"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 )
 
 var (

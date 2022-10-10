@@ -21,8 +21,8 @@ import (
 	"time"
 
 	labels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/logic"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -67,11 +67,11 @@ func TestSortedRecommendation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			namespace := "test-namespace"
-			vpa := model.NewVpa(model.VpaID{Namespace: namespace, VpaName: "my-vpa"}, labels.Nothing(), time.Unix(0, 0))
-			vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, tc.resources, nil))
+			mpa := model.NewMpa(model.MpaID{Namespace: namespace, MpaName: "my-mpa"}, labels.Nothing(), time.Unix(0, 0))
+			mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, tc.resources, nil))
 			// Check that the slice is in the correct order.
-			for i := range vpa.Recommendation.ContainerRecommendations {
-				assert.Equal(t, tc.expectedLast[i], vpa.Recommendation.ContainerRecommendations[i].ContainerName)
+			for i := range mpa.Recommendation.ContainerRecommendations {
+				assert.Equal(t, tc.expectedLast[i], mpa.Recommendation.ContainerRecommendations[i].ContainerName)
 			}
 		})
 	}
