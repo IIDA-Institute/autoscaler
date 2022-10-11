@@ -544,7 +544,7 @@ func (feeder *clusterStateFeeder) validateTargetRef(mpa *mpa_types.MultidimPodAu
 		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: fmt.Sprintf("Unknown error during checking if target is a topmost well-known or scalable controller: %s", err)}
 	}
 	if *top != k {
-		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: "The targetRef controller has a parent but it should point to a topmost well-known or scalable controller"}
+		return false, condition{conditionType: mpa_types.ConfigUnsupported, delete: false, message: "The scaleTargetRef controller has a parent but it should point to a topmost well-known or scalable controller"}
 	}
 	return true, condition{}
 }
@@ -564,10 +564,10 @@ func (feeder *clusterStateFeeder) getSelector(mpa *mpa_types.MultidimPodAutoscal
 			{conditionType: mpa_types.ConfigDeprecated, delete: true},
 		}
 	}
-	msg := "Cannot read targetRef"
+	msg := "Cannot read scaleTargetRef"
 	if fetchErr != nil {
 		klog.Errorf("Cannot get target selector from MPA's targetRef. Reason: %+v", fetchErr)
-		msg = fmt.Sprintf("Cannot read targetRef. Reason: %s", fetchErr.Error())
+		msg = fmt.Sprintf("Cannot read scaleTargetRef. Reason: %s", fetchErr.Error())
 	}
 	return labels.Nothing(), []condition{
 		{conditionType: mpa_types.ConfigUnsupported, delete: false, message: msg},
