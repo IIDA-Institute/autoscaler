@@ -35,8 +35,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&MultidimPodAutoscaler{},
 		&MultidimPodAutoscalerList{},
-		&MultidimPodAutoscalerCheckpoint{},
-		&MultidimPodAutoscalerCheckpointList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)

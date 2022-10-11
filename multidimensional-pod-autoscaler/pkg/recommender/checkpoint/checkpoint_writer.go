@@ -25,10 +25,10 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
-	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -41,14 +41,14 @@ type CheckpointWriter interface {
 }
 
 type checkpointWriter struct {
-	mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
+	vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
 	cluster             *model.ClusterState
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter
-func NewCheckpointWriter(cluster *model.ClusterState, mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter) CheckpointWriter {
+func NewCheckpointWriter(cluster *model.ClusterState, vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter) CheckpointWriter {
 	return &checkpointWriter{
-		mpaCheckpointClient: mpaCheckpointClient,
+		vpaCheckpointClient: vpaCheckpointClient,
 		cluster:             cluster,
 	}
 }
@@ -99,7 +99,7 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				continue
 			}
 			checkpointName := fmt.Sprintf("%s-%s", mpa.ID.MpaName, container)
-			mpaCheckpoint := mpa_types.MultidimPodAutoscalerCheckpoint{
+			vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
 				ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
 				Spec: vpa_types.VerticalPodAutoscalerCheckpointSpec{
 					ContainerName: container,
@@ -107,13 +107,13 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				},
 				Status: *containerCheckpoint,
 			}
-			err = api_util.CreateOrUpdateMpaCheckpoint(writer.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(mpa.ID.Namespace), &mpaCheckpoint)
+			err = api_util.CreateOrUpdateMpaCheckpoint(writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(mpa.ID.Namespace), &vpaCheckpoint)
 			if err != nil {
 				klog.Errorf("Cannot save MPA %s/%s checkpoint for %s. Reason: %+v",
-					mpa.ID.Namespace, mpaCheckpoint.Spec.VPAObjectName, mpaCheckpoint.Spec.ContainerName, err)
+					mpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName, err)
 			} else {
 				klog.V(3).Infof("Saved MPA %s/%s checkpoint for %s",
-					mpa.ID.Namespace, mpaCheckpoint.Spec.VPAObjectName, mpaCheckpoint.Spec.ContainerName)
+					mpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
 				mpa.CheckpointWritten = now
 			}
 			minCheckpoints--

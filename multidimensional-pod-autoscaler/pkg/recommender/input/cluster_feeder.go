@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
-	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
 	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
 	controllerfetcher "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/controller_fetcher"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/history"
@@ -39,6 +38,9 @@ import (
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target"
 	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
+	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
@@ -89,7 +91,7 @@ type ClusterStateFeederFactory struct {
 	ClusterState        *model.ClusterState
 	KubeClient          kube_client.Interface
 	MetricsClient       metrics.MetricsClient
-	MpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
+	MpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
 	MpaLister           mpa_lister.MultidimPodAutoscalerLister
 	PodLister           v1lister.PodLister
 	OOMObserver         oom.Observer
@@ -129,7 +131,7 @@ func NewClusterStateFeeder(config *rest.Config, clusterState *model.ClusterState
 		OOMObserver:         oomObserver,
 		KubeClient:          kubeClient,
 		MetricsClient:       newMetricsClient(config, namespace, metricsClientName),
-		MpaCheckpointClient: mpa_clientset.NewForConfigOrDie(config).AutoscalingV1alpha1(),
+		MpaCheckpointClient: vpa_clientset.NewForConfigOrDie(config).AutoscalingV1(),
 		MpaLister:           mpa_api_util.NewMpasLister(mpa_clientset.NewForConfigOrDie(config), make(chan struct{}), namespace),
 		ClusterState:        clusterState,
 		SelectorFetcher:     target.NewMpaTargetSelectorFetcher(config, kubeClient, factory),
@@ -223,7 +225,7 @@ type clusterStateFeeder struct {
 	specClient          spec.SpecClient
 	metricsClient       metrics.MetricsClient
 	oomChan             <-chan oom.OomInfo
-	mpaCheckpointClient mpa_api.MultidimPodAutoscalerCheckpointsGetter
+	mpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
 	mpaLister           mpa_lister.MultidimPodAutoscalerLister
 	clusterState        *model.ClusterState
 	selectorFetcher     target.MpaTargetSelectorFetcher
@@ -263,7 +265,7 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 	}
 }
 
-func (feeder *clusterStateFeeder) setMpaCheckpoint(checkpoint *mpa_types.MultidimPodAutoscalerCheckpoint) error {
+func (feeder *clusterStateFeeder) setMpaCheckpoint(checkpoint *vpa_types.VerticalPodAutoscalerCheckpoint) error {
 	mpaID := model.MpaID{Namespace: checkpoint.Namespace, MpaName: checkpoint.Spec.VPAObjectName}
 	mpa, exists := feeder.clusterState.Mpas[mpaID]
 	if !exists {
@@ -290,7 +292,7 @@ func (feeder *clusterStateFeeder) InitFromCheckpoints() {
 
 	for namespace := range namespaces {
 		klog.V(3).Infof("Fetching checkpoints from namespace %s", namespace)
-		checkpointList, err := feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+		checkpointList, err := feeder.mpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			klog.Errorf("Cannot list MPA checkpoints from namespace %v. Reason: %+v", namespace, err)
 		}
@@ -318,7 +320,7 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 
 	for _, namespaceItem := range namspaceList.Items {
 		namespace := namespaceItem.Name
-		checkpointList, err := feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+		checkpointList, err := feeder.mpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			klog.Errorf("Cannot list MPA checkpoints from namespace %v. Reason: %+v", namespace, err)
 		}
@@ -326,7 +328,7 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 			mpaID := model.MpaID{Namespace: checkpoint.Namespace, MpaName: checkpoint.Spec.VPAObjectName}
 			_, exists := feeder.clusterState.Mpas[mpaID]
 			if !exists {
-				err = feeder.mpaCheckpointClient.MultidimPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
+				err = feeder.mpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
 				if err == nil {
 					klog.V(3).Infof("Orphaned MPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
 				} else {

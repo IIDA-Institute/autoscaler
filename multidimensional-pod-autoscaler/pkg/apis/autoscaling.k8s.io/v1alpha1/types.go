@@ -219,34 +219,3 @@ type MultidimPodAutoscalerList struct {
 	// items is the list of Multidimensional Pod Autoscaler objects.
 	Items []MultidimPodAutoscaler `json:"items"`
 }
-
-// +genclient
-// +genclient:noStatus
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +kubebuilder:storageversion
-// +kubebuilder:resource:shortName=mpacheckpoint
-
-// MultidimPodAutoscalerCheckpoint is the checkpoint of the internal state of MPA that is used for
-// recovery after recommender's restart.
-type MultidimPodAutoscalerCheckpoint struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// Specification of the checkpoint.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status.
-	// +optional
-	Spec vpa.VerticalPodAutoscalerCheckpointSpec `json:"spec,omitempty"`
-
-	// Data of the checkpoint.
-	// +optional
-	Status vpa.VerticalPodAutoscalerCheckpointStatus `json:"status,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// MultidimPodAutoscalerCheckpointList is a list of MultidimPodAutoscalerCheckpoint objects.
-type MultidimPodAutoscalerCheckpointList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-	Items           []MultidimPodAutoscalerCheckpoint `json:"items"`
-}

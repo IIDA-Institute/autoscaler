@@ -55,8 +55,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=autoscaling.k8s.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("multidimpodautoscalers"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Autoscaling().V1alpha1().MultidimPodAutoscalers().Informer()}, nil
-	case v1alpha1.SchemeGroupVersion.WithResource("multidimpodautoscalercheckpoints"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Autoscaling().V1alpha1().MultidimPodAutoscalerCheckpoints().Informer()}, nil
 
 	}
 

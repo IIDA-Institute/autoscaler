@@ -26,8 +26,6 @@ import (
 type Interface interface {
 	// MultidimPodAutoscalers returns a MultidimPodAutoscalerInformer.
 	MultidimPodAutoscalers() MultidimPodAutoscalerInformer
-	// MultidimPodAutoscalerCheckpoints returns a MultidimPodAutoscalerCheckpointInformer.
-	MultidimPodAutoscalerCheckpoints() MultidimPodAutoscalerCheckpointInformer
 }
 
 type version struct {
@@ -44,9 +42,4 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // MultidimPodAutoscalers returns a MultidimPodAutoscalerInformer.
 func (v *version) MultidimPodAutoscalers() MultidimPodAutoscalerInformer {
 	return &multidimPodAutoscalerInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// MultidimPodAutoscalerCheckpoints returns a MultidimPodAutoscalerCheckpointInformer.
-func (v *version) MultidimPodAutoscalerCheckpoints() MultidimPodAutoscalerCheckpointInformer {
-	return &multidimPodAutoscalerCheckpointInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
