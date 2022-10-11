@@ -34,7 +34,6 @@ import (
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	target_mock "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target/mock"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
 type fakeControllerFetcher struct {
@@ -77,13 +76,13 @@ func TestLoadPods(t *testing.T) {
 		name                                string
 		selector                            labels.Selector
 		fetchSelectorError                  error
-		scaleTargetRef                           *autoscalingv1.CrossVersionObjectReference
+		scaleTargetRef                      *autoscalingv1.CrossVersionObjectReference
 		topMostWellKnownOrScalableKey       *controllerfetcher.ControllerKeyWithAPIVersion
 		findTopMostWellKnownOrScalableError error
 		expectedSelector                    labels.Selector
 		expectedConfigUnsupported           *string
 		expectedConfigDeprecated            *string
-		expectedVpaFetch                    bool
+		expectedMpaFetch                    bool
 		recommenderName                     *string
 		recommender                         string
 	}
@@ -96,7 +95,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          labels.Nothing(),
 			expectedConfigUnsupported: &unsupportedConditionTextFromFetcher,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:                      "also no selector but no error",
@@ -105,7 +104,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          labels.Nothing(),
 			expectedConfigUnsupported: &unsupportedConditionNoExtraText,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:               "scaleTargetRef selector",
@@ -127,7 +126,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          parseLabelSelector("app = test"),
 			expectedConfigUnsupported: nil,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:                      "no scaleTargetRef",
@@ -136,7 +135,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          labels.Nothing(),
 			expectedConfigUnsupported: nil,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:               "can't decide if top-level-ref",
@@ -149,7 +148,7 @@ func TestLoadPods(t *testing.T) {
 				APIVersion: apiVersion,
 			},
 			expectedConfigUnsupported: &unsupportedConditionNoTargetRef,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:               "non-top-level scaleTargetRef",
@@ -170,7 +169,7 @@ func TestLoadPods(t *testing.T) {
 				ApiVersion: apiVersion,
 			},
 			expectedConfigUnsupported: &unsupportedTargetRefHasParent,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:               "error checking if top-level-ref",
@@ -183,7 +182,7 @@ func TestLoadPods(t *testing.T) {
 				APIVersion: "taxonomy",
 			},
 			expectedConfigUnsupported:           &unsupportedConditionMudaMudaMuda,
-			expectedVpaFetch:                    true,
+			expectedMpaFetch:                    true,
 			findTopMostWellKnownOrScalableError: fmt.Errorf("muda muda muda"),
 		},
 		{
@@ -205,7 +204,7 @@ func TestLoadPods(t *testing.T) {
 				ApiVersion: apiVersion,
 			},
 			expectedConfigUnsupported: nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 		},
 		{
 			name:               "no recommenderName",
@@ -227,7 +226,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          parseLabelSelector("app = test"),
 			expectedConfigUnsupported: nil,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          false,
+			expectedMpaFetch:          false,
 			recommenderName:           &empty,
 		},
 		{
@@ -250,7 +249,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          parseLabelSelector("app = test"),
 			expectedConfigUnsupported: nil,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          false,
+			expectedMpaFetch:          false,
 			recommenderName:           &recommenderName,
 			recommender:               "other",
 		},
@@ -274,7 +273,7 @@ func TestLoadPods(t *testing.T) {
 			expectedSelector:          parseLabelSelector("app = test"),
 			expectedConfigUnsupported: nil,
 			expectedConfigDeprecated:  nil,
-			expectedVpaFetch:          true,
+			expectedMpaFetch:          true,
 			recommenderName:           &recommenderName,
 			recommender:               recommenderName,
 		},
@@ -312,41 +311,41 @@ func TestLoadPods(t *testing.T) {
 				clusterStateFeeder.recommenderName = *tc.recommenderName
 			}
 
-			if tc.expectedVpaFetch {
+			if tc.expectedMpaFetch {
 				targetSelectorFetcher.EXPECT().Fetch(mpa).Return(tc.selector, tc.fetchSelectorError)
 			}
 			clusterStateFeeder.LoadMPAs()
 
-			vpaID := model.VpaID{
+			mpaID := model.MpaID{
 				Namespace: mpa.Namespace,
-				VpaName:   mpa.Name,
+				MpaName:   mpa.Name,
 			}
 
-			if !tc.expectedVpaFetch {
-				assert.NotContains(t, clusterState.Vpas, vpaID)
+			if !tc.expectedMpaFetch {
+				assert.NotContains(t, clusterState.Mpas, mpaID)
 				return
 			}
-			assert.Contains(t, clusterState.Vpas, vpaID)
-			storedVpa := clusterState.Vpas[vpaID]
+			assert.Contains(t, clusterState.Mpas, mpaID)
+			storedMpa := clusterState.Mpas[mpaID]
 			if tc.expectedSelector != nil {
-				assert.NotNil(t, storedVpa.PodSelector)
-				assert.Equal(t, tc.expectedSelector.String(), storedVpa.PodSelector.String())
+				assert.NotNil(t, storedMpa.PodSelector)
+				assert.Equal(t, tc.expectedSelector.String(), storedMpa.PodSelector.String())
 			} else {
-				assert.Nil(t, storedVpa.PodSelector)
+				assert.Nil(t, storedMpa.PodSelector)
 			}
 
 			if tc.expectedConfigDeprecated != nil {
-				assert.Contains(t, storedVpa.Conditions, vpa_types.ConfigDeprecated)
-				assert.Equal(t, *tc.expectedConfigDeprecated, storedVpa.Conditions[vpa_types.ConfigDeprecated].Message)
+				assert.Contains(t, storedMpa.Conditions, mpa_types.ConfigDeprecated)
+				assert.Equal(t, *tc.expectedConfigDeprecated, storedMpa.Conditions[mpa_types.ConfigDeprecated].Message)
 			} else {
-				assert.NotContains(t, storedVpa.Conditions, vpa_types.ConfigDeprecated)
+				assert.NotContains(t, storedMpa.Conditions, mpa_types.ConfigDeprecated)
 			}
 
 			if tc.expectedConfigUnsupported != nil {
-				assert.Contains(t, storedVpa.Conditions, vpa_types.ConfigUnsupported)
-				assert.Equal(t, *tc.expectedConfigUnsupported, storedVpa.Conditions[vpa_types.ConfigUnsupported].Message)
+				assert.Contains(t, storedMpa.Conditions, mpa_types.ConfigUnsupported)
+				assert.Equal(t, *tc.expectedConfigUnsupported, storedMpa.Conditions[mpa_types.ConfigUnsupported].Message)
 			} else {
-				assert.NotContains(t, storedVpa.Conditions, vpa_types.ConfigUnsupported)
+				assert.NotContains(t, storedMpa.Conditions, mpa_types.ConfigUnsupported)
 			}
 
 		})
@@ -377,56 +376,56 @@ func makeTestSpecClient(podLabels []map[string]string) spec.SpecClient {
 func TestClusterStateFeeder_LoadPods(t *testing.T) {
 	for _, tc := range []struct {
 		Name              string
-		VPALabelSelectors []string
+		MPALabelSelectors []string
 		PodLabels         []map[string]string
 		TrackedPods       int
 	}{
 		{
 			Name:              "simple",
-			VPALabelSelectors: []string{"name=vpa-pod"},
+			MPALabelSelectors: []string{"name=mpa-pod"},
 			PodLabels: []map[string]string{
-				{"name": "vpa-pod"},
+				{"name": "mpa-pod"},
 				{"type": "stateful"},
 			},
 			TrackedPods: 1,
 		},
 		{
 			Name:              "multiple",
-			VPALabelSelectors: []string{"name=vpa-pod,type=stateful"},
+			MPALabelSelectors: []string{"name=mpa-pod,type=stateful"},
 			PodLabels: []map[string]string{
-				{"name": "vpa-pod", "type": "stateful"},
+				{"name": "mpa-pod", "type": "stateful"},
 				{"type": "stateful"},
-				{"name": "vpa-pod"},
+				{"name": "mpa-pod"},
 			},
 			TrackedPods: 1,
 		},
 		{
 			Name:              "no matches",
-			VPALabelSelectors: []string{"name=vpa-pod"},
+			MPALabelSelectors: []string{"name=mpa-pod"},
 			PodLabels: []map[string]string{
-				{"name": "non-vpa-pod", "type": "stateful"},
+				{"name": "non-mpa-pod", "type": "stateful"},
 			},
 			TrackedPods: 0,
 		},
 		{
 			Name:              "set based",
-			VPALabelSelectors: []string{"environment in (staging, qa),name=vpa-pod"},
+			MPALabelSelectors: []string{"environment in (staging, qa),name=mpa-pod"},
 			PodLabels: []map[string]string{
-				{"name": "vpa-pod", "environment": "staging"},
-				{"name": "vpa-pod", "environment": "production"},
-				{"name": "non-vpa-pod", "environment": "staging"},
-				{"name": "non-vpa-pod", "environment": "production"},
+				{"name": "mpa-pod", "environment": "staging"},
+				{"name": "mpa-pod", "environment": "production"},
+				{"name": "non-mpa-pod", "environment": "staging"},
+				{"name": "non-mpa-pod", "environment": "production"},
 			},
 			TrackedPods: 1,
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			clusterState := model.NewClusterState(testGcPeriod)
-			for i, selector := range tc.VPALabelSelectors {
-				vpaLabel, err := labels.Parse(selector)
+			for i, selector := range tc.MPALabelSelectors {
+				mpaLabel, err := labels.Parse(selector)
 				assert.NoError(t, err)
-				clusterState.Vpas = map[model.VpaID]*model.Vpa{
-					{VpaName: fmt.Sprintf("test-vpa-%d", i), Namespace: "default"}: {PodSelector: vpaLabel},
+				clusterState.Mpas = map[model.MpaID]*model.Mpa{
+					{MpaName: fmt.Sprintf("test-mpa-%d", i), Namespace: "default"}: {PodSelector: mpaLabel},
 				}
 			}
 

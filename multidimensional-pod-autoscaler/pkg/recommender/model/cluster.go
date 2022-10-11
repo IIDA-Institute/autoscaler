@@ -43,15 +43,6 @@ type ClusterState struct {
 	// Pods in the cluster.
 	Pods map[PodID]*PodState
 
-	// VPA objects in the cluster.
-	Vpas map[VpaID]*Vpa
-	// VPA objects in the cluster that have no recommendation mapped to the first
-	// time we've noticed the recommendation missing or last time we logged
-	// a warning about it.
-	EmptyVPAs map[VpaID]time.Time
-	// Observed VPAs. Used to check if there are updates needed.
-	ObservedVpas []*vpa_types.VerticalPodAutoscaler
-
 	// MPA objects in the cluster.
 	Mpas map[MpaID]*Mpa
 	// MPA objects in the cluster that have no recommendation mapped to the first
@@ -110,8 +101,6 @@ type PodState struct {
 func NewClusterState(gcInterval time.Duration) *ClusterState {
 	return &ClusterState{
 		Pods:                          make(map[PodID]*PodState),
-		Vpas:                          make(map[VpaID]*Vpa),
-		EmptyVPAs:                     make(map[VpaID]time.Time),
 		Mpas:                          make(map[MpaID]*Mpa),
 		EmptyMPAs:                     make(map[MpaID]time.Time),
 		aggregateStateMap:             make(aggregateContainerStatesMap),
@@ -142,8 +131,8 @@ func (cluster *ClusterState) AddOrUpdatePod(podID PodID, newLabels labels.Set, p
 
 	newlabelSetKey := cluster.getLabelSetKey(newLabels)
 	if podExists && pod.labelSetKey != newlabelSetKey {
-		// This Pod is already counted in the old VPA, remove the link.
-		cluster.removePodFromItsVpa(pod)
+		// This Pod is already counted in the old MPA, remove the link.
+		cluster.removePodFromItsMpa(pod)
 	}
 	if !podExists || pod.labelSetKey != newlabelSetKey {
 		pod.labelSetKey = newlabelSetKey
@@ -153,26 +142,26 @@ func (cluster *ClusterState) AddOrUpdatePod(podID PodID, newLabels labels.Set, p
 			container.aggregator = cluster.findOrCreateAggregateContainerState(containerID)
 		}
 
-		cluster.addPodToItsVpa(pod)
+		cluster.addPodToItsMpa(pod)
 	}
 	pod.Phase = phase
 }
 
-// addPodToItsVpa increases the count of Pods associated with a VPA object.
+// addPodToItsVpa increases the count of Pods associated with a MPA object.
 // Does a scan similar to findOrCreateAggregateContainerState so could be optimized if needed.
-func (cluster *ClusterState) addPodToItsVpa(pod *PodState) {
-	for _, vpa := range cluster.Vpas {
-		if vpa_utils.PodLabelsMatchVPA(pod.ID.Namespace, cluster.labelSetMap[pod.labelSetKey], vpa.ID.Namespace, vpa.PodSelector) {
-			vpa.PodCount++
+func (cluster *ClusterState) addPodToItsMpa(pod *PodState) {
+	for _, mpa := range cluster.Mpas {
+		if vpa_utils.PodLabelsMatchVPA(pod.ID.Namespace, cluster.labelSetMap[pod.labelSetKey], mpa.ID.Namespace, mpa.PodSelector) {
+			mpa.PodCount++
 		}
 	}
 }
 
 // removePodFromItsVpa decreases the count of Pods associated with a VPA object.
-func (cluster *ClusterState) removePodFromItsVpa(pod *PodState) {
-	for _, vpa := range cluster.Vpas {
-		if vpa_utils.PodLabelsMatchVPA(pod.ID.Namespace, cluster.labelSetMap[pod.labelSetKey], vpa.ID.Namespace, vpa.PodSelector) {
-			vpa.PodCount--
+func (cluster *ClusterState) removePodFromItsMpa(pod *PodState) {
+	for _, mpa := range cluster.Mpas {
+		if vpa_utils.PodLabelsMatchVPA(pod.ID.Namespace, cluster.labelSetMap[pod.labelSetKey], mpa.ID.Namespace, mpa.PodSelector) {
+			mpa.PodCount--
 		}
 	}
 }
@@ -194,7 +183,7 @@ func (cluster *ClusterState) GetContainer(containerID ContainerID) *ContainerSta
 func (cluster *ClusterState) DeletePod(podID PodID) {
 	pod, found := cluster.Pods[podID]
 	if found {
-		cluster.removePodFromItsVpa(pod)
+		cluster.removePodFromItsMpa(pod)
 	}
 	delete(cluster.Pods, podID)
 }
@@ -253,48 +242,6 @@ func (cluster *ClusterState) RecordOOM(containerID ContainerID, timestamp time.T
 	return nil
 }
 
-// AddOrUpdateVpa adds a new VPA with a given ID to the ClusterState if it
-// didn't yet exist. If the VPA already existed but had a different pod
-// selector, the pod selector is updated. Updates the links between the VPA and
-// all aggregations it matches.
-func (cluster *ClusterState) AddOrUpdateVpa(apiObject *vpa_types.VerticalPodAutoscaler, selector labels.Selector) error {
-	vpaID := VpaID{Namespace: apiObject.Namespace, VpaName: apiObject.Name}
-	annotationsMap := apiObject.Annotations
-	conditionsMap := make(vpaConditionsMap)
-	for _, condition := range apiObject.Status.Conditions {
-		conditionsMap[condition.Type] = condition
-	}
-	var currentRecommendation *vpa_types.RecommendedPodResources
-	if conditionsMap[vpa_types.RecommendationProvided].Status == apiv1.ConditionTrue {
-		currentRecommendation = apiObject.Status.Recommendation
-	}
-
-	vpa, vpaExists := cluster.Vpas[vpaID]
-	if vpaExists && (vpa.PodSelector.String() != selector.String()) {
-		// Pod selector was changed. Delete the VPA object and recreate
-		// it with the new selector.
-		if err := cluster.DeleteVpa(vpaID); err != nil {
-			return err
-		}
-		vpaExists = false
-	}
-	if !vpaExists {
-		vpa = NewVpa(vpaID, selector, apiObject.CreationTimestamp.Time)
-		cluster.Vpas[vpaID] = vpa
-		for aggregationKey, aggregation := range cluster.aggregateStateMap {
-			vpa.UseAggregationIfMatching(aggregationKey, aggregation)
-		}
-		vpa.PodCount = len(cluster.GetMatchingPods(vpa))
-	}
-	vpa.TargetRef = apiObject.Spec.TargetRef
-	vpa.Annotations = annotationsMap
-	vpa.Conditions = conditionsMap
-	vpa.Recommendation = currentRecommendation
-	vpa.SetUpdateMode(apiObject.Spec.UpdatePolicy)
-	vpa.SetResourcePolicy(apiObject.Spec.ResourcePolicy)
-	return nil
-}
-
 // AddOrUpdateMpa adds a new MPA with a given ID to the ClusterState if it
 // didn't yet exist. If the MPA already existed but had a different pod
 // selector, the pod selector is updated. Updates the links between the MPA and
@@ -326,7 +273,7 @@ func (cluster *ClusterState) AddOrUpdateMpa(apiObject *mpa_types.MultidimPodAuto
 		for aggregationKey, aggregation := range cluster.aggregateStateMap {
 			mpa.UseAggregationIfMatching(aggregationKey, aggregation)
 		}
-		mpa.PodCount = len(cluster.GetMatchingPodsForMPA(mpa))
+		mpa.PodCount = len(cluster.GetMatchingPods(mpa))
 	}
 	mpa.ScaleTargetRef = apiObject.Spec.ScaleTargetRef
 	mpa.Annotations = annotationsMap
@@ -334,20 +281,6 @@ func (cluster *ClusterState) AddOrUpdateMpa(apiObject *mpa_types.MultidimPodAuto
 	mpa.Recommendation = currentRecommendation
 	mpa.SetUpdateMode(apiObject.Spec.UpdatePolicy)
 	mpa.SetResourcePolicy(apiObject.Spec.ResourcePolicy)
-	return nil
-}
-
-// DeleteVpa removes a VPA with the given ID from the ClusterState.
-func (cluster *ClusterState) DeleteVpa(vpaID VpaID) error {
-	vpa, vpaExists := cluster.Vpas[vpaID]
-	if !vpaExists {
-		return NewKeyError(vpaID)
-	}
-	for _, state := range vpa.aggregateContainerStates {
-		state.MarkNotAutoscaled()
-	}
-	delete(cluster.Vpas, vpaID)
-	delete(cluster.EmptyVPAs, vpaID)
 	return nil
 }
 
@@ -411,8 +344,8 @@ func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID Con
 		aggregateContainerState = NewAggregateContainerState()
 		cluster.aggregateStateMap[aggregateStateKey] = aggregateContainerState
 		// Link the new aggregation to the existing VPAs.
-		for _, vpa := range cluster.Vpas {
-			vpa.UseAggregationIfMatching(aggregateStateKey, aggregateContainerState)
+		for _, mpa := range cluster.Mpas {
+			mpa.UseAggregationIfMatching(aggregateStateKey, aggregateContainerState)
 		}
 	}
 	return aggregateContainerState
@@ -445,8 +378,8 @@ func (cluster *ClusterState) garbageCollectAggregateCollectionStates(now time.Ti
 	}
 	for _, key := range keysToDelete {
 		delete(cluster.aggregateStateMap, key)
-		for _, vpa := range cluster.Vpas {
-			vpa.DeleteAggregation(key)
+		for _, mpa := range cluster.Mpas {
+			mpa.DeleteAggregation(key)
 		}
 	}
 }
@@ -507,21 +440,8 @@ func (cluster *ClusterState) RecordRecommendation(mpa *Mpa, now time.Time) error
 }
 
 // GetMatchingPods returns a list of currently active pods that match the
-// given VPA. Traverses through all pods in the cluster - use sparingly.
-func (cluster *ClusterState) GetMatchingPods(vpa *Vpa) []PodID {
-	matchingPods := []PodID{}
-	for podID, pod := range cluster.Pods {
-		if vpa_utils.PodLabelsMatchVPA(podID.Namespace, cluster.labelSetMap[pod.labelSetKey],
-			vpa.ID.Namespace, vpa.PodSelector) {
-			matchingPods = append(matchingPods, podID)
-		}
-	}
-	return matchingPods
-}
-
-// GetMatchingPodsForMPA returns a list of currently active pods that match the
 // given MPA. Traverses through all pods in the cluster - use sparingly.
-func (cluster *ClusterState) GetMatchingPodsForMPA(mpa *Mpa) []PodID {
+func (cluster *ClusterState) GetMatchingPods(mpa *Mpa) []PodID {
 	matchingPods := []PodID{}
 	for podID, pod := range cluster.Pods {
 		if vpa_utils.PodLabelsMatchVPA(podID.Namespace, cluster.labelSetMap[pod.labelSetKey],
@@ -534,15 +454,15 @@ func (cluster *ClusterState) GetMatchingPodsForMPA(mpa *Mpa) []PodID {
 
 // GetControllerForPodUnderVPA returns controller associated with given Pod. Returns nil if Pod is not controlled by a VPA object.
 func (cluster *ClusterState) GetControllerForPodUnderVPA(pod *PodState, controllerFetcher controllerfetcher.ControllerFetcher) *controllerfetcher.ControllerKeyWithAPIVersion {
-	controllingVPA := cluster.GetControllingVPA(pod)
-	if controllingVPA != nil {
+	controllingMPA := cluster.GetControllingMPA(pod)
+	if controllingMPA != nil {
 		controller := &controllerfetcher.ControllerKeyWithAPIVersion{
 			ControllerKey: controllerfetcher.ControllerKey{
-				Namespace: controllingVPA.ID.Namespace,
-				Kind:      controllingVPA.TargetRef.Kind,
-				Name:      controllingVPA.TargetRef.Name,
+				Namespace: controllingMPA.ID.Namespace,
+				Kind:      controllingMPA.ScaleTargetRef.Kind,
+				Name:      controllingMPA.ScaleTargetRef.Name,
 			},
-			ApiVersion: controllingVPA.TargetRef.APIVersion,
+			ApiVersion: controllingMPA.ScaleTargetRef.APIVersion,
 		}
 		topLevelController, _ := controllerFetcher.FindTopMostWellKnownOrScalable(controller)
 		return topLevelController
@@ -551,11 +471,11 @@ func (cluster *ClusterState) GetControllerForPodUnderVPA(pod *PodState, controll
 }
 
 // GetControllingVPA returns a VPA object controlling given Pod.
-func (cluster *ClusterState) GetControllingVPA(pod *PodState) *Vpa {
-	for _, vpa := range cluster.Vpas {
+func (cluster *ClusterState) GetControllingMPA(pod *PodState) *Mpa {
+	for _, mpa := range cluster.Mpas {
 		if vpa_utils.PodLabelsMatchVPA(pod.ID.Namespace, cluster.labelSetMap[pod.labelSetKey],
-			vpa.ID.Namespace, vpa.PodSelector) {
-			return vpa
+			mpa.ID.Namespace, mpa.PodSelector) {
+			return mpa
 		}
 	}
 	return nil

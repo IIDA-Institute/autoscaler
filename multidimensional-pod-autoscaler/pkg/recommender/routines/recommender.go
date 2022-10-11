@@ -121,14 +121,14 @@ func (r *recommender) UpdateMPAs() {
 				klog.Infof("%+v", mpa)
 				klog.Infof("HasMatchingPods: %v", hasMatchingPods)
 				klog.Infof("PodCount: %v", mpa.PodCount)
-				pods := r.clusterState.GetMatchingPodsForMPA(mpa)
+				pods := r.clusterState.GetMatchingPods(mpa)
 				klog.Infof("MatchingPods: %+v", pods)
 				if len(pods) != mpa.PodCount {
 					klog.Errorf("ClusterState pod count and matching pods disagree for mpa %v/%v", mpa.ID.Namespace, mpa.ID.MpaName)
 				}
 			}
 		}
-		cnt.AddMPA(mpa)
+		cnt.Add(mpa)
 
 		_, err := mpa_utils.UpdateMpaStatusIfNeeded(
 			r.mpaClient.MultidimPodAutoscalers(mpa.ID.Namespace), mpa.ID.MpaName, mpa.AsStatus(), &observedMpa.Status)

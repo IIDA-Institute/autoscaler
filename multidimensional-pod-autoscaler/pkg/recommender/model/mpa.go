@@ -136,6 +136,16 @@ func (mpa *Mpa) UsesAggregation(aggregationKey AggregateStateKey) bool {
 	return exists
 }
 
+// DeleteAggregation deletes aggregation used by this container
+func (mpa *Mpa) DeleteAggregation(aggregationKey AggregateStateKey) {
+	state, ok := mpa.aggregateContainerStates[aggregationKey]
+	if !ok {
+		return
+	}
+	state.MarkNotAutoscaled()
+	delete(mpa.aggregateContainerStates, aggregationKey)
+}
+
 // matchesAggregation returns true iff the MPA matches the given aggregation key.
 func (mpa *Mpa) matchesAggregation(aggregationKey AggregateStateKey) bool {
 	if mpa.ID.Namespace != aggregationKey.Namespace() {

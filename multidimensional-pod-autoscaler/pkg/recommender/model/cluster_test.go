@@ -38,10 +38,8 @@ var (
 	testPodID3      = PodID{"namespace-1", "pod-3"}
 	testPodID4      = PodID{"namespace-1", "pod-4"}
 	testContainerID = ContainerID{testPodID, "container-1"}
-	testVpaID       = VpaID{"namespace-1", "vpa-1"}
 	testMpaID       = MpaID{"namespace-1", "mpa-1"}
-	testAnnotations = vpaAnnotationsMap{"key-1": "value-1"}
-	testMPAAnnotations = mpaAnnotationsMap{"key-1": "value-1"}
+	testAnnotations = mpaAnnotationsMap{"key-1": "value-1"}
 	testLabels      = map[string]string{"label-1": "value-1"}
 	emptyLabels     = map[string]string{}
 	testSelectorStr = "label-1 = value-1"
@@ -101,7 +99,7 @@ func TestClusterAddSample(t *testing.T) {
 func TestClusterGCAggregateContainerStateDeletesOld(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	addTestPod(cluster)
 
 	assert.NoError(t, cluster.AddOrUpdateContainer(testContainerID, testRequest))
@@ -111,27 +109,27 @@ func TestClusterGCAggregateContainerStateDeletesOld(t *testing.T) {
 	assert.NoError(t, cluster.AddSample(usageSample))
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	// AggegateContainerState are valid for 8 days since last sample
 	cluster.garbageCollectAggregateCollectionStates(usageSample.MeasureStart.Add(9*24*time.Hour), testControllerFetcher)
 
-	// AggegateContainerState should be deleted from both cluster and vpa
+	// AggegateContainerState should be deleted from both cluster and mpa
 	assert.Empty(t, cluster.aggregateStateMap)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	assert.Empty(t, mpa.aggregateContainerStates)
 }
 
 func TestClusterGCAggregateContainerStateDeletesOldEmpty(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	addTestPod(cluster)
 
 	assert.NoError(t, cluster.AddOrUpdateContainer(testContainerID, testRequest))
 	// No usage samples added.
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	assert.Len(t, cluster.aggregateStateMap, 1)
 	var creationTime time.Time
@@ -140,22 +138,22 @@ func TestClusterGCAggregateContainerStateDeletesOldEmpty(t *testing.T) {
 	}
 
 	// Verify empty aggregate states are not removed right away.
-	cluster.garbageCollectAggregateCollectionStates(creationTime.Add(1*time.Minute), testControllerFetcher) // AggegateContainerState should be deleted from both cluster and vpa
+	cluster.garbageCollectAggregateCollectionStates(creationTime.Add(1*time.Minute), testControllerFetcher) // AggegateContainerState should be deleted from both cluster and mpa
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	// AggegateContainerState are valid for 8 days since creation
 	cluster.garbageCollectAggregateCollectionStates(creationTime.Add(9*24*time.Hour), testControllerFetcher)
 
-	// AggegateContainerState should be deleted from both cluster and vpa
+	// AggegateContainerState should be deleted from both cluster and mpa
 	assert.Empty(t, cluster.aggregateStateMap)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	assert.Empty(t, mpa.aggregateContainerStates)
 }
 
 func TestClusterGCAggregateContainerStateDeletesEmptyInactiveWithoutController(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	pod := addTestPod(cluster)
 	// Controller Fetcher returns nil, meaning that there is no corresponding controller alive.
 	controller := &fakeControllerFetcher{
@@ -167,13 +165,13 @@ func TestClusterGCAggregateContainerStateDeletesEmptyInactiveWithoutController(t
 	// No usage samples added.
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	cluster.garbageCollectAggregateCollectionStates(testTimestamp, controller)
 
 	// AggegateContainerState should not be deleted as the pod is still active.
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	cluster.Pods[pod.ID].Phase = apiv1.PodSucceeded
 	cluster.garbageCollectAggregateCollectionStates(testTimestamp, controller)
@@ -181,13 +179,13 @@ func TestClusterGCAggregateContainerStateDeletesEmptyInactiveWithoutController(t
 	// AggegateContainerState should be empty as the pod is no longer active, controller is not alive
 	// and there are no usage samples.
 	assert.Empty(t, cluster.aggregateStateMap)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	assert.Empty(t, mpa.aggregateContainerStates)
 }
 
 func TestClusterGCAggregateContainerStateLeavesEmptyInactiveWithController(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	pod := addTestPod(cluster)
 	// Controller Fetcher returns existing controller, meaning that there is a corresponding controller alive.
 	controller := testControllerFetcher
@@ -196,26 +194,26 @@ func TestClusterGCAggregateContainerStateLeavesEmptyInactiveWithController(t *te
 	// No usage samples added.
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	cluster.garbageCollectAggregateCollectionStates(testTimestamp, controller)
 
 	// AggegateContainerState should not be deleted as the pod is still active.
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	cluster.Pods[pod.ID].Phase = apiv1.PodSucceeded
 	cluster.garbageCollectAggregateCollectionStates(testTimestamp, controller)
 
 	// AggegateContainerState should not be delated as the controller is still alive.
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 }
 
 func TestClusterGCAggregateContainerStateLeavesValid(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	addTestPod(cluster)
 
 	assert.NoError(t, cluster.AddOrUpdateContainer(testContainerID, testRequest))
@@ -225,19 +223,19 @@ func TestClusterGCAggregateContainerStateLeavesValid(t *testing.T) {
 	assert.NoError(t, cluster.AddSample(usageSample))
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	// AggegateContainerState are valid for 8 days since last sample
 	cluster.garbageCollectAggregateCollectionStates(usageSample.MeasureStart.Add(7*24*time.Hour), testControllerFetcher)
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 }
 
 func TestAddSampleAfterAggregateContainerStateGCed(t *testing.T) {
 	// Create a pod with a single container.
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	pod := addTestPod(cluster)
 	addTestContainer(t, cluster)
 
@@ -248,17 +246,17 @@ func TestAddSampleAfterAggregateContainerStateGCed(t *testing.T) {
 	assert.NoError(t, cluster.AddSample(usageSample))
 
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(testContainerID)
-	assert.Contains(t, vpa.aggregateContainerStates, aggregateStateKey)
+	assert.Contains(t, mpa.aggregateContainerStates, aggregateStateKey)
 
 	// AggegateContainerState are invalid after 8 days since last sample
 	gcTimestamp := usageSample.MeasureStart.Add(10 * 24 * time.Hour)
 	cluster.garbageCollectAggregateCollectionStates(gcTimestamp, testControllerFetcher)
 
 	assert.Empty(t, cluster.aggregateStateMap)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	assert.Empty(t, mpa.aggregateContainerStates)
 	assert.Contains(t, pod.Containers, testContainerID.ContainerName)
 
 	newUsageSample := &ContainerUsageSampleWithKey{ContainerUsageSample{
@@ -270,7 +268,7 @@ func TestAddSampleAfterAggregateContainerStateGCed(t *testing.T) {
 	// Add usage sample to the container again.
 	assert.NoError(t, cluster.AddSample(newUsageSample))
 
-	assert.Contains(t, vpa.aggregateContainerStates, aggregateStateKey)
+	assert.Contains(t, mpa.aggregateContainerStates, aggregateStateKey)
 }
 
 func TestClusterGCRateLimiting(t *testing.T) {
@@ -281,25 +279,25 @@ func TestClusterGCRateLimiting(t *testing.T) {
 	// AggegateContainerState are valid for 8 days since last sample but this run
 	// doesn't remove the sample, because we didn't add it yet.
 	cluster.RateLimitedGarbageCollectAggregateCollectionStates(sampleExpireTime, testControllerFetcher)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	addTestPod(cluster)
 	assert.NoError(t, cluster.AddOrUpdateContainer(testContainerID, testRequest))
 
 	// Add a usage sample to the container.
 	assert.NoError(t, cluster.AddSample(usageSample))
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
 	// Sample is expired but this run doesn't remove it yet, because less than testGcPeriod
 	// elapsed since the previous run.
 	cluster.RateLimitedGarbageCollectAggregateCollectionStates(sampleExpireTime.Add(testGcPeriod/2), testControllerFetcher)
 	assert.NotEmpty(t, cluster.aggregateStateMap)
-	assert.NotEmpty(t, vpa.aggregateContainerStates)
+	assert.NotEmpty(t, mpa.aggregateContainerStates)
 
-	// AggegateContainerState should be deleted from both cluster and vpa
+	// AggegateContainerState should be deleted from both cluster and mpa
 	cluster.RateLimitedGarbageCollectAggregateCollectionStates(sampleExpireTime.Add(2*testGcPeriod), testControllerFetcher)
 	assert.Empty(t, cluster.aggregateStateMap)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	assert.Empty(t, mpa.aggregateContainerStates)
 }
 
 func TestClusterRecordOOM(t *testing.T) {
@@ -330,26 +328,10 @@ func TestMissingKeys(t *testing.T) {
 	assert.EqualError(t, err, "KeyError: {namespace-1 pod-1}")
 }
 
-func addVpa(cluster *ClusterState, id VpaID, annotations vpaAnnotationsMap, selector string, targetRef *autoscaling.CrossVersionObjectReference) *Vpa {
-	apiObject := test.VerticalPodAutoscaler().WithNamespace(id.Namespace).
-		WithName(id.VpaName).WithContainer(testContainerID.ContainerName).WithAnnotations(annotations).WithTargetRef(targetRef).Get()
-	return addVpaObject(cluster, id, apiObject, selector)
-}
-
 func addMpa(cluster *ClusterState, id MpaID, annotations mpaAnnotationsMap, selector string, scaleTargetRef *autoscaling.CrossVersionObjectReference) *Mpa {
 	apiObject := test.MultidimPodAutoscaler().WithNamespace(id.Namespace).
 		WithName(id.MpaName).WithContainer(testContainerID.ContainerName).WithAnnotations(annotations).WithScaleTargetRef(scaleTargetRef).Get()
 	return addMpaObject(cluster, id, apiObject, selector)
-}
-
-func addVpaObject(cluster *ClusterState, id VpaID, vpa *vpa_types.VerticalPodAutoscaler, selector string) *Vpa {
-	labelSelector, _ := metav1.ParseToLabelSelector(selector)
-	parsedSelector, _ := metav1.LabelSelectorAsSelector(labelSelector)
-	err := cluster.AddOrUpdateVpa(vpa, parsedSelector)
-	if err != nil {
-		klog.Fatalf("AddOrUpdateVpa() failed: %v", err)
-	}
-	return cluster.Vpas[id]
 }
 
 func addMpaObject(cluster *ClusterState, id MpaID, mpa *mpa_types.MultidimPodAutoscaler, selector string) *Mpa {
@@ -362,8 +344,8 @@ func addMpaObject(cluster *ClusterState, id MpaID, mpa *mpa_types.MultidimPodAut
 	return cluster.Mpas[id]
 }
 
-func addTestVpa(cluster *ClusterState) *Vpa {
-	return addVpa(cluster, testVpaID, testAnnotations, testSelectorStr, testTargetRef)
+func addTestMpa(cluster *ClusterState) *Mpa {
+	return addMpa(cluster, testMpaID, testAnnotations, testSelectorStr, testTargetRef)
 }
 
 func addTestPod(cluster *ClusterState) *PodState {
@@ -377,111 +359,111 @@ func addTestContainer(t *testing.T, cluster *ClusterState) *ContainerState {
 	return cluster.GetContainer(testContainerID)
 }
 
-// Creates a VPA followed by a matching pod. Verifies that the links between
-// VPA, the container and the aggregation are set correctly.
-func TestAddVpaThenAddPod(t *testing.T) {
+// Creates a MPA followed by a matching pod. Verifies that the links between
+// MPA, the container and the aggregation are set correctly.
+func TestAddMpaThenAddPod(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
-	assert.Empty(t, vpa.aggregateContainerStates)
+	mpa := addTestMpa(cluster)
+	assert.Empty(t, mpa.aggregateContainerStates)
 	addTestPod(cluster)
 	addTestContainer(t, cluster)
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(testContainerID)
-	assert.Contains(t, vpa.aggregateContainerStates, aggregateStateKey)
+	assert.Contains(t, mpa.aggregateContainerStates, aggregateStateKey)
 }
 
-// Creates a pod followed by a matching VPA. Verifies that the links between
-// VPA, the container and the aggregation are set correctly.
-func TestAddPodThenAddVpa(t *testing.T) {
+// Creates a pod followed by a matching MPA. Verifies that the links between
+// MPA, the container and the aggregation are set correctly.
+func TestAddPodThenAddMpa(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
 	addTestPod(cluster)
 	addTestContainer(t, cluster)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(testContainerID)
-	assert.Contains(t, vpa.aggregateContainerStates, aggregateStateKey)
+	assert.Contains(t, mpa.aggregateContainerStates, aggregateStateKey)
 }
 
-// Creates a VPA and a matching pod, then change the pod labels such that it is
-// no longer matched by the VPA. Verifies that the links between the pod and the
-// VPA are removed.
+// Creates a MPA and a matching pod, then change the pod labels such that it is
+// no longer matched by the MPA. Verifies that the links between the pod and the
+// MPA are removed.
 func TestChangePodLabels(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	addTestPod(cluster)
 	addTestContainer(t, cluster)
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(testContainerID)
-	assert.Contains(t, vpa.aggregateContainerStates, aggregateStateKey)
-	// Update Pod labels to no longer match the VPA.
+	assert.Contains(t, mpa.aggregateContainerStates, aggregateStateKey)
+	// Update Pod labels to no longer match the MPA.
 	cluster.AddOrUpdatePod(testPodID, emptyLabels, apiv1.PodRunning)
 	aggregateStateKey = cluster.aggregateStateKeyForContainerID(testContainerID)
-	assert.NotContains(t, vpa.aggregateContainerStates, aggregateStateKey)
+	assert.NotContains(t, mpa.aggregateContainerStates, aggregateStateKey)
 }
 
-// Creates a VPA and verifies that annotation updates work properly.
+// Creates a MPA and verifies that annotation updates work properly.
 func TestUpdateAnnotations(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
-	vpa := addTestVpa(cluster)
+	mpa := addTestMpa(cluster)
 	// Verify that the annotations match the test annotations.
-	assert.Equal(t, vpa.Annotations, testAnnotations)
+	assert.Equal(t, mpa.Annotations, testAnnotations)
 	// Update the annotations (non-empty).
-	annotations := vpaAnnotationsMap{"key-2": "value-2"}
-	vpa = addVpa(cluster, testVpaID, annotations, testSelectorStr, testTargetRef)
-	assert.Equal(t, vpa.Annotations, annotations)
+	annotations := mpaAnnotationsMap{"key-2": "value-2"}
+	mpa = addMpa(cluster, testMpaID, annotations, testSelectorStr, testTargetRef)
+	assert.Equal(t, mpa.Annotations, annotations)
 	// Update the annotations (empty).
-	annotations = vpaAnnotationsMap{}
-	vpa = addVpa(cluster, testVpaID, annotations, testSelectorStr, testTargetRef)
-	assert.Equal(t, vpa.Annotations, annotations)
+	annotations = mpaAnnotationsMap{}
+	mpa = addMpa(cluster, testMpaID, annotations, testSelectorStr, testTargetRef)
+	assert.Equal(t, mpa.Annotations, annotations)
 }
 
-// Creates a VPA and a matching pod, then change the VPA pod selector 3 times:
+// Creates a MPA and a matching pod, then change the MPA pod selector 3 times:
 // first such that it still matches the pod, then such that it no longer matches
 // the pod, finally such that it matches the pod again. Verifies that the links
-// between the pod and the VPA are updated correctly each time.
+// between the pod and the MPA are updated correctly each time.
 func TestUpdatePodSelector(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
 	addTestPod(cluster)
 	addTestContainer(t, cluster)
 
-	// Update the VPA selector such that it still matches the Pod.
-	vpa := addVpa(cluster, testVpaID, testAnnotations, "label-1 in (value-1,value-2)", testTargetRef)
-	assert.Contains(t, vpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
+	// Update the MPA selector such that it still matches the Pod.
+	mpa := addMpa(cluster, testMpaID, testAnnotations, "label-1 in (value-1,value-2)", testTargetRef)
+	assert.Contains(t, mpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
 
-	// Update the VPA selector to no longer match the Pod.
-	vpa = addVpa(cluster, testVpaID, testAnnotations, "label-1 = value-2", testTargetRef)
-	assert.NotContains(t, vpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
+	// Update the MPA selector to no longer match the Pod.
+	mpa = addMpa(cluster, testMpaID, testAnnotations, "label-1 = value-2", testTargetRef)
+	assert.NotContains(t, mpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
 
-	// Update the VPA selector to match the Pod again.
-	vpa = addVpa(cluster, testVpaID, testAnnotations, "label-1 = value-1", testTargetRef)
-	assert.Contains(t, vpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
+	// Update the MPA selector to match the Pod again.
+	mpa = addMpa(cluster, testMpaID, testAnnotations, "label-1 = value-1", testTargetRef)
+	assert.Contains(t, mpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(testContainerID))
 }
 
-// Test setting ResourcePolicy and UpdatePolicy on adding or updating VPA object
-func TestAddOrUpdateVPAPolicies(t *testing.T) {
-	testVpaBuilder := test.VerticalPodAutoscaler().WithName(testVpaID.VpaName).
-		WithNamespace(testVpaID.Namespace).WithContainer(testContainerID.ContainerName)
+// Test setting ResourcePolicy and UpdatePolicy on adding or updating MPA object
+func TestAddOrUpdateMPAPolicies(t *testing.T) {
+	testMpaBuilder := test.MultidimPodAutoscaler().WithName(testMpaID.MpaName).
+		WithNamespace(testMpaID.Namespace).WithContainer(testContainerID.ContainerName)
 	updateModeAuto := vpa_types.UpdateModeAuto
 	updateModeOff := vpa_types.UpdateModeOff
 	scalingModeAuto := vpa_types.ContainerScalingModeAuto
 	scalingModeOff := vpa_types.ContainerScalingModeOff
 	cases := []struct {
 		name                string
-		oldVpa              *vpa_types.VerticalPodAutoscaler
-		newVpa              *vpa_types.VerticalPodAutoscaler
+		oldMpa              *mpa_types.MultidimPodAutoscaler
+		newMpa              *mpa_types.MultidimPodAutoscaler
 		resourcePolicy      *vpa_types.PodResourcePolicy
 		expectedScalingMode *vpa_types.ContainerScalingMode
 		expectedUpdateMode  *vpa_types.UpdateMode
 	}{
 		{
 			name:   "Defaults to auto",
-			oldVpa: nil,
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
-			// Container scaling mode is a separate concept from update mode in the VPA object,
+			oldMpa: nil,
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
+			// Container scaling mode is a separate concept from update mode in the MPA object,
 			// hence the UpdateModeOff does not influence container scaling mode here.
 			expectedScalingMode: &scalingModeAuto,
 			expectedUpdateMode:  &updateModeOff,
 		}, {
 			name:   "Default scaling mode set to Off",
-			oldVpa: nil,
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa: nil,
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			resourcePolicy: &vpa_types.PodResourcePolicy{
 				ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 					{
@@ -494,8 +476,8 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 			expectedUpdateMode:  &updateModeAuto,
 		}, {
 			name:   "Explicit scaling mode set to Off",
-			oldVpa: nil,
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa: nil,
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			resourcePolicy: &vpa_types.PodResourcePolicy{
 				ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 					{
@@ -508,8 +490,8 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 			expectedUpdateMode:  &updateModeAuto,
 		}, {
 			name:   "Other container has explicit scaling mode Off",
-			oldVpa: nil,
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa: nil,
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			resourcePolicy: &vpa_types.PodResourcePolicy{
 				ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 					{
@@ -522,8 +504,8 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 			expectedUpdateMode:  &updateModeAuto,
 		}, {
 			name:   "Scaling mode to default Off",
-			oldVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			resourcePolicy: &vpa_types.PodResourcePolicy{
 				ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 					{
@@ -536,8 +518,8 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 			expectedUpdateMode:  &updateModeAuto,
 		}, {
 			name:   "Scaling mode to explicit Off",
-			oldVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
-			newVpa: testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			newMpa: testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			resourcePolicy: &vpa_types.PodResourcePolicy{
 				ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 					{
@@ -552,14 +534,14 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 		// Tests checking changes to UpdateMode.
 		{
 			name:                "UpdateMode from Off to Auto",
-			oldVpa:              testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
-			newVpa:              testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			oldMpa:              testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
+			newMpa:              testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
 			expectedScalingMode: &scalingModeAuto,
 			expectedUpdateMode:  &updateModeAuto,
 		}, {
 			name:                "UpdateMode from Auto to Off",
-			oldVpa:              testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
-			newVpa:              testVpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
+			oldMpa:              testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeAuto).Get(),
+			newMpa:              testMpaBuilder.WithUpdateMode(vpa_types.UpdateModeOff).Get(),
 			expectedScalingMode: &scalingModeAuto,
 			expectedUpdateMode:  &updateModeOff,
 		},
@@ -569,25 +551,25 @@ func TestAddOrUpdateVPAPolicies(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
 			addTestPod(cluster)
 			addTestContainer(t, cluster)
-			if tc.oldVpa != nil {
-				oldVpa := addVpaObject(cluster, testVpaID, tc.oldVpa, testSelectorStr)
-				if !assert.Contains(t, cluster.Vpas, testVpaID) {
+			if tc.oldMpa != nil {
+				oldMpa := addMpaObject(cluster, testMpaID, tc.oldMpa, testSelectorStr)
+				if !assert.Contains(t, cluster.Mpas, testMpaID) {
 					t.FailNow()
 				}
-				assert.Len(t, oldVpa.aggregateContainerStates, 1, "Expected one container aggregation in VPA %v", testVpaID)
-				for containerName, aggregation := range oldVpa.aggregateContainerStates {
+				assert.Len(t, oldMpa.aggregateContainerStates, 1, "Expected one container aggregation in MPA %v", testMpaID)
+				for containerName, aggregation := range oldMpa.aggregateContainerStates {
 					assert.Equal(t, &scalingModeAuto, aggregation.GetScalingMode(), "Unexpected scaling mode for container %s", containerName)
 				}
 			}
-			tc.newVpa.Spec.ResourcePolicy = tc.resourcePolicy
-			addVpaObject(cluster, testVpaID, tc.newVpa, testSelectorStr)
-			vpa, found := cluster.Vpas[testVpaID]
-			if !assert.True(t, found, "VPA %+v not found in cluster state.", testVpaID) {
+			tc.newMpa.Spec.ResourcePolicy = tc.resourcePolicy
+			addMpaObject(cluster, testMpaID, tc.newMpa, testSelectorStr)
+			mpa, found := cluster.Mpas[testMpaID]
+			if !assert.True(t, found, "MPA %+v not found in cluster state.", testMpaID) {
 				t.FailNow()
 			}
-			assert.Equal(t, tc.expectedUpdateMode, vpa.UpdateMode)
-			assert.Len(t, vpa.aggregateContainerStates, 1, "Expected one container aggregation in VPA %v", testVpaID)
-			for containerName, aggregation := range vpa.aggregateContainerStates {
+			assert.Equal(t, tc.expectedUpdateMode, mpa.UpdateMode)
+			assert.Len(t, mpa.aggregateContainerStates, 1, "Expected one container aggregation in MPA %v", testMpaID)
+			for containerName, aggregation := range mpa.aggregateContainerStates {
 				assert.Equal(t, tc.expectedUpdateMode, aggregation.UpdateMode, "Unexpected update mode for container %s", containerName)
 				assert.Equal(t, tc.expectedScalingMode, aggregation.GetScalingMode(), "Unexpected scaling mode for container %s", containerName)
 			}
@@ -645,12 +627,12 @@ func TestTwoPodsWithDifferentNamespaces(t *testing.T) {
 	assert.Equal(t, 1, len(cluster.labelSetMap))
 }
 
-// Verifies that a VPA with an empty selector (matching all pods) matches a pod
+// Verifies that a MPA with an empty selector (matching all pods) matches a pod
 // with labels as well as a pod with no labels.
 func TestEmptySelector(t *testing.T) {
 	cluster := NewClusterState(testGcPeriod)
-	// Create a VPA with an empty selector (matching all pods).
-	vpa := addVpa(cluster, testVpaID, testAnnotations, "", testTargetRef)
+	// Create a MPA with an empty selector (matching all pods).
+	mpa := addMpa(cluster, testMpaID, testAnnotations, "", testTargetRef)
 	// Create a pod with labels. Add a container.
 	cluster.AddOrUpdatePod(testPodID, testLabels, apiv1.PodRunning)
 	containerID1 := ContainerID{testPodID, "foo"}
@@ -662,9 +644,9 @@ func TestEmptySelector(t *testing.T) {
 	containerID2 := ContainerID{anotherPodID, "foo"}
 	assert.NoError(t, cluster.AddOrUpdateContainer(containerID2, testRequest))
 
-	// Both pods should be matched by the VPA.
-	assert.Contains(t, vpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(containerID1))
-	assert.Contains(t, vpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(containerID2))
+	// Both pods should be matched by the MPA.
+	assert.Contains(t, mpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(containerID1))
+	assert.Contains(t, mpa.aggregateContainerStates, cluster.aggregateStateKeyForContainerID(containerID2))
 }
 
 func TestRecordRecommendation(t *testing.T) {
@@ -678,20 +660,20 @@ func TestRecordRecommendation(t *testing.T) {
 		expectedError      error
 	}{
 		{
-			name:           "VPA has recommendation",
+			name:           "MPA has recommendation",
 			recommendation: test.Recommendation().WithContainer("test").WithTarget("100m", "200G").Get(),
 			now:            testTimestamp,
 			expectedEmpty:  false,
 			expectedError:  nil,
 		}, {
-			name:           "VPA recommendation appears",
+			name:           "MPA recommendation appears",
 			recommendation: test.Recommendation().WithContainer("test").WithTarget("100m", "200G").Get(),
 			lastLogged:     testTimestamp.Add(-10 * time.Minute),
 			now:            testTimestamp,
 			expectedEmpty:  false,
 			expectedError:  nil,
 		}, {
-			name:               "VPA recommendation missing",
+			name:               "MPA recommendation missing",
 			recommendation:     &vpa_types.RecommendedPodResources{},
 			lastLogged:         testTimestamp.Add(-10 * time.Minute),
 			now:                testTimestamp,
@@ -699,15 +681,15 @@ func TestRecordRecommendation(t *testing.T) {
 			expectedLastLogged: testTimestamp.Add(-10 * time.Minute),
 			expectedError:      nil,
 		}, {
-			name:               "VPA recommendation missing and needs logging",
+			name:               "MPA recommendation missing and needs logging",
 			recommendation:     &vpa_types.RecommendedPodResources{},
 			lastLogged:         testTimestamp.Add(-40 * time.Minute),
 			now:                testTimestamp,
 			expectedEmpty:      true,
 			expectedLastLogged: testTimestamp,
-			expectedError:      fmt.Errorf("VPA namespace-1/vpa-1 is missing recommendation for more than %v", RecommendationMissingMaxDuration),
+			expectedError:      fmt.Errorf("MPA namespace-1/mpa-1 is missing recommendation for more than %v", RecommendationMissingMaxDuration),
 		}, {
-			name:               "VPA recommendation disappears",
+			name:               "MPA recommendation disappears",
 			recommendation:     &vpa_types.RecommendedPodResources{},
 			now:                testTimestamp,
 			expectedEmpty:      true,
@@ -719,7 +701,7 @@ func TestRecordRecommendation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
-			mpa := addMpa(cluster, testMpaID, testMPAAnnotations, testSelectorStr, testTargetRef)
+			mpa := addMpa(cluster, testMpaID, testAnnotations, testSelectorStr, testTargetRef)
 			cluster.Mpas[testMpaID].Recommendation = tc.recommendation
 			if !tc.lastLogged.IsZero() {
 				cluster.EmptyMPAs[testMpaID] = tc.lastLogged
@@ -750,18 +732,18 @@ type podDesc struct {
 func TestGetActiveMatchingPods(t *testing.T) {
 	cases := []struct {
 		name         string
-		vpaSelector  string
+		mpaSelector  string
 		pods         []podDesc
 		expectedPods []PodID
 	}{
 		{
 			name:         "No pods",
-			vpaSelector:  testSelectorStr,
+			mpaSelector:  testSelectorStr,
 			pods:         []podDesc{},
 			expectedPods: []PodID{},
 		}, {
 			name:        "Matching pod",
-			vpaSelector: testSelectorStr,
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					id:     testPodID,
@@ -772,7 +754,7 @@ func TestGetActiveMatchingPods(t *testing.T) {
 			expectedPods: []PodID{testPodID},
 		}, {
 			name:        "Matching pod is inactive",
-			vpaSelector: testSelectorStr,
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					id:     testPodID,
@@ -783,14 +765,14 @@ func TestGetActiveMatchingPods(t *testing.T) {
 			expectedPods: []PodID{testPodID},
 		}, {
 			name:        "No matching pods",
-			vpaSelector: testSelectorStr,
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					id:     testPodID,
 					labels: emptyLabels,
 					phase:  apiv1.PodRunning,
 				}, {
-					id:     PodID{Namespace: "different-than-vpa", PodName: "pod-1"},
+					id:     PodID{Namespace: "different-than-mpa", PodName: "pod-1"},
 					labels: testLabels,
 					phase:  apiv1.PodRunning,
 				},
@@ -802,32 +784,32 @@ func TestGetActiveMatchingPods(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
-			vpa := addVpa(cluster, testVpaID, testAnnotations, tc.vpaSelector, testTargetRef)
+			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)
 			for _, pod := range tc.pods {
 				cluster.AddOrUpdatePod(pod.id, pod.labels, pod.phase)
 			}
-			pods := cluster.GetMatchingPods(vpa)
+			pods := cluster.GetMatchingPods(mpa)
 			assert.ElementsMatch(t, tc.expectedPods, pods)
 		})
 	}
 }
 
-func TestVPAWithMatchingPods(t *testing.T) {
+func TestMPAWithMatchingPods(t *testing.T) {
 	cases := []struct {
 		name          string
-		vpaSelector   string
+		mpaSelector   string
 		pods          []podDesc
 		expectedMatch int
 	}{
 		{
 			name:          "No pods",
-			vpaSelector:   testSelectorStr,
+			mpaSelector:   testSelectorStr,
 			pods:          []podDesc{},
 			expectedMatch: 0,
 		},
 		{
-			name:        "VPA with matching pod",
-			vpaSelector: testSelectorStr,
+			name:        "MPA with matching pod",
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					testPodID,
@@ -839,7 +821,7 @@ func TestVPAWithMatchingPods(t *testing.T) {
 		},
 		{
 			name:        "No matching pod",
-			vpaSelector: testSelectorStr,
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					testPodID,
@@ -850,12 +832,12 @@ func TestVPAWithMatchingPods(t *testing.T) {
 			expectedMatch: 0,
 		},
 		{
-			name:        "VPA with 2 matching pods, 1 not matching",
-			vpaSelector: testSelectorStr,
+			name:        "MPA with 2 matching pods, 1 not matching",
+			mpaSelector: testSelectorStr,
 			pods: []podDesc{
 				{
 					testPodID,
-					emptyLabels, // does not match VPA
+					emptyLabels, // does not match MPA
 					apiv1.PodRunning,
 				},
 				{
@@ -872,17 +854,17 @@ func TestVPAWithMatchingPods(t *testing.T) {
 			expectedMatch: 2,
 		},
 	}
-	// Run with adding VPA first
+	// Run with adding MPA first
 	for _, tc := range cases {
-		t.Run(tc.name+", VPA first", func(t *testing.T) {
+		t.Run(tc.name+", MPA first", func(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
-			vpa := addVpa(cluster, testVpaID, testAnnotations, tc.vpaSelector, testTargetRef)
+			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)
 			for _, podDesc := range tc.pods {
 				cluster.AddOrUpdatePod(podDesc.id, podDesc.labels, podDesc.phase)
 				containerID := ContainerID{testPodID, "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
-			assert.Equal(t, tc.expectedMatch, cluster.Vpas[vpa.ID].PodCount)
+			assert.Equal(t, tc.expectedMatch, cluster.Mpas[mpa.ID].PodCount)
 		})
 	}
 	// Run with adding Pods first
@@ -894,8 +876,8 @@ func TestVPAWithMatchingPods(t *testing.T) {
 				containerID := ContainerID{testPodID, "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
-			vpa := addVpa(cluster, testVpaID, testAnnotations, tc.vpaSelector, testTargetRef)
-			assert.Equal(t, tc.expectedMatch, cluster.Vpas[vpa.ID].PodCount)
+			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)
+			assert.Equal(t, tc.expectedMatch, cluster.Mpas[mpa.ID].PodCount)
 		})
 	}
 }

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package recommender (aka metrics_recommender) - code for metrics of VPA Recommender
+// Package recommender (aka metrics_recommender) - code for metrics of VPA/MPA Recommender
 package recommender
 
 import (
@@ -47,13 +47,6 @@ const (
 )
 
 var (
-	vpaObjectCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Name:      "vpa_objects_count",
-			Help:      "Number of VPA objects present in the cluster.",
-		}, []string{"update_mode", "has_recommendation", "api", "matches_pods", "unsupported_config"},
-	)
 
 	mpaObjectCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -67,13 +60,13 @@ var (
 		prometheus.HistogramOpts{
 			Namespace: metricsNamespace,
 			Name:      "recommendation_latency_seconds",
-			Help:      "Time elapsed from creating a valid VPA configuration to the first recommendation.",
+			Help:      "Time elapsed from creating a valid MPA configuration to the first recommendation.",
 			Buckets:   []float64{1.0, 2.0, 5.0, 7.5, 10.0, 20.0, 30.0, 40.00, 50.0, 60.0, 90.0, 120.0, 150.0, 180.0, 240.0, 300.0, 600.0, 900.0, 1800.0},
 		},
 	)
 
 	functionLatency = metrics.CreateExecutionTimeMetric(metricsNamespace,
-		"Time spent in various parts of VPA Recommender main loop.")
+		"Time spent in various parts of MPA Recommender main loop.")
 
 	aggregateContainerStatesCount = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -100,14 +93,14 @@ type objectCounterKey struct {
 	unsupportedConfig bool
 }
 
-// ObjectCounter helps split all VPA objects into buckets
+// ObjectCounter helps split all MPA objects into buckets
 type ObjectCounter struct {
 	cnt map[objectCounterKey]int
 }
 
-// Register initializes all metrics for VPA Recommender
+// Register initializes all metrics for MPA Recommender
 func Register() {
-	prometheus.MustRegister(vpaObjectCount, recommendationLatency, functionLatency, aggregateContainerStatesCount, metricServerResponses)
+	prometheus.MustRegister(mpaObjectCount, recommendationLatency, functionLatency, aggregateContainerStatesCount, metricServerResponses)
 }
 
 // NewExecutionTimer provides a timer for Recommender's RunOnce execution
@@ -130,7 +123,7 @@ func RecordMetricsServerResponse(err error, clientName string) {
 	metricServerResponses.WithLabelValues(strconv.FormatBool(err != nil), clientName).Inc()
 }
 
-// NewObjectCounter creates a new helper to split VPA objects into buckets
+// NewObjectCounter creates a new helper to split MPA objects into buckets
 func NewObjectCounter() *ObjectCounter {
 	obj := ObjectCounter{
 		cnt: make(map[objectCounterKey]int),
@@ -139,7 +132,7 @@ func NewObjectCounter() *ObjectCounter {
 	// initialize with empty data so we can clean stale gauge values in Observe
 	for _, m := range modes {
 		for _, h := range []bool{false, true} {
-			for _, api := range []apiVersion{v1beta1, v1beta2, v1} {
+			for _, api := range []apiVersion{v1beta1, v1beta2, v1, v1alpha1} {
 				for _, mp := range []bool{false, true} {
 					for _, uc := range []bool{false, true} {
 						obj.cnt[objectCounterKey{
@@ -158,30 +151,8 @@ func NewObjectCounter() *ObjectCounter {
 	return &obj
 }
 
-// Add updates the helper state to include the given VPA object
-func (oc *ObjectCounter) Add(vpa *model.Vpa) {
-	mode := string(vpa_types.UpdateModeAuto)
-	if vpa.UpdateMode != nil && string(*vpa.UpdateMode) != "" {
-		mode = string(*vpa.UpdateMode)
-	}
-	// TODO: Maybe report v1 version as well.
-	api := v1beta2
-	if vpa.IsV1Beta1API {
-		api = v1beta1
-	}
-
-	key := objectCounterKey{
-		mode:              mode,
-		has:               vpa.HasRecommendation(),
-		apiVersion:        api,
-		matchesPods:       vpa.HasMatchedPods(),
-		unsupportedConfig: vpa.Conditions.ConditionActive(vpa_types.ConfigUnsupported),
-	}
-	oc.cnt[key]++
-}
-
 // Add updates the helper state to include the given MPA object
-func (oc *ObjectCounter) AddMPA(mpa *model.Mpa) {
+func (oc *ObjectCounter) Add(mpa *model.Mpa) {
 	mode := string(vpa_types.UpdateModeAuto)
 	if mpa.UpdateMode != nil && string(*mpa.UpdateMode) != "" {
 		mode = string(*mpa.UpdateMode)
@@ -205,7 +176,7 @@ func (oc *ObjectCounter) AddMPA(mpa *model.Mpa) {
 // Observe passes all the computed bucket values to metrics
 func (oc *ObjectCounter) Observe() {
 	for k, v := range oc.cnt {
-		vpaObjectCount.WithLabelValues(
+		mpaObjectCount.WithLabelValues(
 			k.mode,
 			fmt.Sprintf("%v", k.has),
 			string(k.apiVersion),
