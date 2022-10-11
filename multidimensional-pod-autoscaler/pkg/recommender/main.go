@@ -18,17 +18,18 @@ package main
 
 import (
 	"flag"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
 	"time"
 
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input"
+
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/common"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/history"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/routines"
+	metrics_recommender "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
-	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	kube_flag "k8s.io/component-base/cli/flag"
 	klog "k8s.io/klog/v2"
 )
@@ -56,7 +57,7 @@ var (
 	ctrNamespaceLabel   = flag.String("container-namespace-label", "namespace", `Label name to look for container namespaces`)
 	ctrPodNameLabel     = flag.String("container-pod-name-label", "pod_name", `Label name to look for container pod names`)
 	ctrNameLabel        = flag.String("container-name-label", "name", `Label name to look for container names`)
-	vpaObjectNamespace  = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
+	mpaObjectNamespace  = flag.String("mpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for MPA objects and pod stats. Empty means all namespaces will be used.")
 )
 
 // Aggregation configuration flags
@@ -70,7 +71,7 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	kube_flag.InitFlags()
-	klog.V(1).Infof("Vertical Pod Autoscaler %s Recommender: %v", common.VerticalPodAutoscalerVersion, recommenderName)
+	klog.V(1).Infof("Multi-dimensional Pod Autoscaler %s Recommender: %v", common.MultidimPodAutoscalerVersion, recommenderName)
 
 	config := common.CreateKubeConfigOrDie(*kubeconfig, float32(*kubeApiQps), int(*kubeApiBurst))
 
@@ -82,7 +83,7 @@ func main() {
 	metrics_quality.Register()
 
 	useCheckpoints := *storage != "prometheus"
-	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *vpaObjectNamespace, *recommenderName)
+	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *mpaObjectNamespace, *recommenderName)
 
 	promQueryTimeout, err := time.ParseDuration(*queryTimeout)
 	if err != nil {
@@ -105,7 +106,7 @@ func main() {
 			CtrPodNameLabel:        *ctrPodNameLabel,
 			CtrNameLabel:           *ctrNameLabel,
 			CadvisorMetricsJobName: *prometheusJobName,
-			Namespace:              *vpaObjectNamespace,
+			Namespace:              *mpaObjectNamespace,
 		}
 		provider, err := history.NewPrometheusHistoryProvider(config)
 		if err != nil {

@@ -7,7 +7,7 @@ TEST_ENVVAR=LD_FLAGS=-s GO111MODULE=on
 ENVVAR=CGO_ENABLED=0 $(TEST_ENVVAR)
 GOOS?=linux
 COMPONENT=recommender
-FULL_COMPONENT=vpa-${COMPONENT}
+FULL_COMPONENT=mpa-${COMPONENT}
 
 ALL_ARCHITECTURES?=amd64 arm arm64 ppc64le s390x
 export DOCKER_CLI_EXPERIMENTAL=enabled
@@ -69,14 +69,14 @@ push-multi-arch:
 	docker manifest push --purge $(REGISTRY)/${FULL_COMPONENT}:$(TAG)
 
 docker-builder:
-	docker build -t vpa-autoscaling-builder ../../builder
+	docker build -t mpa-autoscaling-builder ../../builder
 
 .PHONY: build-in-docker
 build-in-docker: $(addprefix build-in-docker-,$(ALL_ARCHITECTURES))
 
 .PHONY: build-in-docker-*
 build-in-docker-%: clean docker-builder
-	docker run -v `pwd`/../..:/gopath/src/k8s.io/autoscaler/vertical-pod-autoscaler vpa-autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/vertical-pod-autoscaler && make build-binary-with-vendor-$* -C pkg/recommender'
+	docker run -v `pwd`/../..:/gopath/src/k8s.io/autoscaler/multidimensional-pod-autoscaler mpa-autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/multidimensional-pod-autoscaler && make build-binary-with-vendor-$* -C pkg/recommender'
 
 release: build-in-docker docker-build docker-push
 	@echo "Full in-docker release ${FULL_COMPONENT}:${TAG} completed"
