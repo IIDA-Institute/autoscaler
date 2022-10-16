@@ -30,7 +30,6 @@ import (
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
 	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
-	controllerfetcher "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/controller_fetcher"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/history"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/metrics"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/oom"
@@ -41,6 +40,7 @@ import (
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
+	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
@@ -404,6 +404,7 @@ func (feeder *clusterStateFeeder) LoadMPAs() {
 		if feeder.clusterState.AddOrUpdateMpa(mpaCRD, selector) == nil {
 			// Successfully added MPA to the model.
 			mpaKeys[mpaID] = true
+			klog.V(4).Infof("Added MPA %v to cluster state.", mpaID)
 
 			for _, condition := range conditions {
 				if condition.delete {
@@ -568,7 +569,7 @@ func (feeder *clusterStateFeeder) getSelector(mpa *mpa_types.MultidimPodAutoscal
 	}
 	msg := "Cannot read scaleTargetRef"
 	if fetchErr != nil {
-		klog.Errorf("Cannot get target selector from MPA's targetRef. Reason: %+v", fetchErr)
+		klog.Errorf("Cannot get target selector from MPA's scaleTargetRef. Reason: %+v", fetchErr)
 		msg = fmt.Sprintf("Cannot read scaleTargetRef. Reason: %s", fetchErr.Error())
 	}
 	return labels.Nothing(), []condition{

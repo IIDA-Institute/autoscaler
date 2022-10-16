@@ -102,14 +102,17 @@ func (r *recommender) UpdateMPAs() {
 			Namespace: observedMpa.Namespace,
 			MpaName:   observedMpa.Name,
 		}
+		klog.V(4).Infof("Recommender is checking MPA %v...", key)
 
 		mpa, found := r.clusterState.Mpas[key]
 		if !found {
+			klog.V(4).Infof("MPA %v not found in the cluster state map!", key)
 			continue
 		}
 		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
 		had := mpa.HasRecommendation()
 		mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
+		klog.V(4).Infof("MPA %v recommendation updated: %v (%v)", key, resources, had)
 		if mpa.HasRecommendation() && !had {
 			metrics_recommender.ObserveRecommendationLatency(mpa.Created)
 		}

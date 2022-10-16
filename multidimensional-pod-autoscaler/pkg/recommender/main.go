@@ -35,7 +35,7 @@ import (
 )
 
 var (
-	recommenderName        = flag.String("recommender-name", input.DefaultRecommenderName, "Set the recommender name. Recommender will generate recommendations for VPAs that configure the same recommender name. If the recommender name is left as default it will also generate recommendations that don't explicitly specify recommender. You shouldn't run two recommenders with the same name in a cluster.")
+	recommenderName        = flag.String("recommender-name", input.DefaultRecommenderName, "Set the recommender name. Recommender will generate recommendations for MPAs that configure the same recommender name. If the recommender name is left as default it will also generate recommendations that don't explicitly specify recommender. You shouldn't run two recommenders with the same name in a cluster.")
 	metricsFetcherInterval = flag.Duration("recommender-interval", 1*time.Minute, `How often metrics should be fetched`)
 	checkpointsGCInterval  = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
 	prometheusAddress      = flag.String("prometheus-address", "", `Where to reach for Prometheus metrics`)
@@ -84,6 +84,7 @@ func main() {
 
 	useCheckpoints := *storage != "prometheus"
 	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *mpaObjectNamespace, *recommenderName)
+	klog.Infof("MPA Recommender created!")
 
 	promQueryTimeout, err := time.ParseDuration(*queryTimeout)
 	if err != nil {
@@ -93,6 +94,7 @@ func main() {
 	if useCheckpoints {
 		recommender.GetClusterStateFeeder().InitFromCheckpoints()
 	} else {
+		klog.Info("Creating Prometheus history provider...")
 		config := history.PrometheusHistoryProviderConfig{
 			Address:                *prometheusAddress,
 			QueryTimeout:           promQueryTimeout,
@@ -112,12 +114,16 @@ func main() {
 		if err != nil {
 			klog.Fatalf("Could not initialize history provider: %v", err)
 		}
+		klog.Info("History provider initialized!")
 		recommender.GetClusterStateFeeder().InitFromHistoryProvider(provider)
+		klog.Info("Recommender initialized!")
 	}
 
 	ticker := time.Tick(*metricsFetcherInterval)
+	klog.Info("Start running MPA Recommender...")
 	for range ticker {
 		recommender.RunOnce()
 		healthCheck.UpdateLastActivity()
+		klog.Info("Health check completed.")
 	}
 }

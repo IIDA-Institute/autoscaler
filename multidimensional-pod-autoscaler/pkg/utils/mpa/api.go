@@ -58,7 +58,7 @@ func patchMpa(mpaClient mpa_api.MultidimPodAutoscalerInterface, mpaName string, 
 // namespace, set namespace to k8sapiv1.NamespaceAll to select all namespaces.
 // The method blocks until mpaLister is initially populated.
 func NewMpasLister(mpaClient *mpa_clientset.Clientset, stopChannel <-chan struct{}, namespace string) mpa_lister.MultidimPodAutoscalerLister {
-	mpaListWatch := cache.NewListWatchFromClient(mpaClient.AutoscalingV1alpha1().RESTClient(), "verticalpodautoscalers", namespace, fields.Everything())
+	mpaListWatch := cache.NewListWatchFromClient(mpaClient.AutoscalingV1alpha1().RESTClient(), "multidimpodautoscalers", namespace, fields.Everything())
 	indexer, controller := cache.NewIndexerInformer(mpaListWatch,
 		&mpa_types.MultidimPodAutoscaler{},
 		1*time.Hour,

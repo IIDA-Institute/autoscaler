@@ -313,7 +313,6 @@ k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
 # k8s.io/autoscaler/vertical-pod-autoscaler v0.12.0 => ../vertical-pod-autoscaler
 ## explicit; go 1.19
-k8s.io/autoscaler/vertical-pod-autoscaler/common
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta1
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2
@@ -326,24 +325,13 @@ k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/a
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/poc.autoscaling.k8s.io/v1alpha1
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1beta1
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target/mock
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa
 # k8s.io/client-go v0.25.2
 ## explicit; go 1.19
@@ -556,11 +544,11 @@ k8s.io/client-go/pkg/apis/clientauthentication/v1
 k8s.io/client-go/pkg/apis/clientauthentication/v1beta1
 k8s.io/client-go/pkg/version
 k8s.io/client-go/plugin/pkg/client/auth/exec
+k8s.io/client-go/plugin/pkg/client/auth/oidc
 k8s.io/client-go/rest
 k8s.io/client-go/rest/watch
 k8s.io/client-go/restmapper
 k8s.io/client-go/scale
-k8s.io/client-go/scale/fake
 k8s.io/client-go/scale/scheme
 k8s.io/client-go/scale/scheme/appsint
 k8s.io/client-go/scale/scheme/appsv1beta1
