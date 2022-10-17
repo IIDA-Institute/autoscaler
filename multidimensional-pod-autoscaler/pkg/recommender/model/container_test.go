@@ -52,14 +52,14 @@ func newUsageSample(timestamp time.Time, usage int64, resource vpa_model.Resourc
 type ContainerTest struct {
 	mockCPUHistogram        *util.MockHistogram
 	mockMemoryHistogram     *util.MockHistogram
-	aggregateContainerState *AggregateContainerState
+	aggregateContainerState *vpa_model.AggregateContainerState
 	container               *ContainerState
 }
 
 func newContainerTest() ContainerTest {
 	mockCPUHistogram := new(util.MockHistogram)
 	mockMemoryHistogram := new(util.MockHistogram)
-	aggregateContainerState := &AggregateContainerState{
+	aggregateContainerState := &vpa_model.AggregateContainerState{
 		AggregateCPUUsage:    mockCPUHistogram,
 		AggregateMemoryPeaks: mockMemoryHistogram,
 	}
@@ -82,7 +82,7 @@ func newContainerTest() ContainerTest {
 func TestAggregateContainerUsageSamples(t *testing.T) {
 	test := newContainerTest()
 	c := test.container
-	memoryAggregationInterval := GetAggregationsConfig().MemoryAggregationInterval
+	memoryAggregationInterval := vpa_model.GetAggregationsConfig().MemoryAggregationInterval
 	// Verify that CPU measures are added to the CPU histogram.
 	// The weight should be equal to the current request.
 	timeStep := memoryAggregationInterval / 2
@@ -124,7 +124,7 @@ func TestAggregateContainerUsageSamples(t *testing.T) {
 
 func TestRecordOOMIncreasedByBumpUp(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
+	memoryAggregationWindowEnd := testTimestamp.Add(vpa_model.GetAggregationsConfig().MemoryAggregationInterval)
 	// Bump Up factor is 20%.
 	test.mockMemoryHistogram.On("AddSample", 1200.0*mb, 1.0, memoryAggregationWindowEnd)
 
@@ -133,7 +133,7 @@ func TestRecordOOMIncreasedByBumpUp(t *testing.T) {
 
 func TestRecordOOMDontRunAway(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
+	memoryAggregationWindowEnd := testTimestamp.Add(vpa_model.GetAggregationsConfig().MemoryAggregationInterval)
 
 	// Bump Up factor is 20%.
 	test.mockMemoryHistogram.On("AddSample", 1200.0*mb, 1.0, memoryAggregationWindowEnd)
@@ -151,7 +151,7 @@ func TestRecordOOMDontRunAway(t *testing.T) {
 
 func TestRecordOOMIncreasedByMin(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
+	memoryAggregationWindowEnd := testTimestamp.Add(vpa_model.GetAggregationsConfig().MemoryAggregationInterval)
 	// Min grow by 100Mb.
 	test.mockMemoryHistogram.On("AddSample", 101.0*mb, 1.0, memoryAggregationWindowEnd)
 
@@ -160,7 +160,7 @@ func TestRecordOOMIncreasedByMin(t *testing.T) {
 
 func TestRecordOOMMaxedWithKnownSample(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
+	memoryAggregationWindowEnd := testTimestamp.Add(vpa_model.GetAggregationsConfig().MemoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 3000.0*mb, 1.0, memoryAggregationWindowEnd)
 	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 3000*mb, vpa_model.ResourceMemory)))
@@ -174,7 +174,7 @@ func TestRecordOOMMaxedWithKnownSample(t *testing.T) {
 
 func TestRecordOOMDiscardsOldSample(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
+	memoryAggregationWindowEnd := testTimestamp.Add(vpa_model.GetAggregationsConfig().MemoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 1000.0*mb, 1.0, memoryAggregationWindowEnd)
 	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 1000*mb, vpa_model.ResourceMemory)))
@@ -185,7 +185,7 @@ func TestRecordOOMDiscardsOldSample(t *testing.T) {
 
 func TestRecordOOMInNewWindow(t *testing.T) {
 	test := newContainerTest()
-	memoryAggregationInterval := GetAggregationsConfig().MemoryAggregationInterval
+	memoryAggregationInterval := vpa_model.GetAggregationsConfig().MemoryAggregationInterval
 	memoryAggregationWindowEnd := testTimestamp.Add(memoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 2000.0*mb, 1.0, memoryAggregationWindowEnd)

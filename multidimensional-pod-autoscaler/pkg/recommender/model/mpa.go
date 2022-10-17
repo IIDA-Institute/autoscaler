@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 )
@@ -117,7 +118,7 @@ func NewMpa(id MpaID, selector labels.Selector, created time.Time) *Mpa {
 
 // UseAggregationIfMatching checks if the given aggregation matches (contributes to) this MPA
 // and adds it to the set of MPA's aggregations if that is the case.
-func (mpa *Mpa) UseAggregationIfMatching(aggregationKey AggregateStateKey, aggregation *AggregateContainerState) {
+func (mpa *Mpa) UseAggregationIfMatching(aggregationKey vpa_model.AggregateStateKey, aggregation *vpa_model.AggregateContainerState) {
 	if mpa.UsesAggregation(aggregationKey) {
 		// Already linked, we can return quickly.
 		return
@@ -131,13 +132,13 @@ func (mpa *Mpa) UseAggregationIfMatching(aggregationKey AggregateStateKey, aggre
 }
 
 // UsesAggregation returns true iff an aggregation with the given key contributes to the MPA.
-func (mpa *Mpa) UsesAggregation(aggregationKey AggregateStateKey) bool {
+func (mpa *Mpa) UsesAggregation(aggregationKey vpa_model.AggregateStateKey) bool {
 	_, exists := mpa.aggregateContainerStates[aggregationKey]
 	return exists
 }
 
 // DeleteAggregation deletes aggregation used by this container
-func (mpa *Mpa) DeleteAggregation(aggregationKey AggregateStateKey) {
+func (mpa *Mpa) DeleteAggregation(aggregationKey vpa_model.AggregateStateKey) {
 	state, ok := mpa.aggregateContainerStates[aggregationKey]
 	if !ok {
 		return
@@ -147,7 +148,7 @@ func (mpa *Mpa) DeleteAggregation(aggregationKey AggregateStateKey) {
 }
 
 // matchesAggregation returns true iff the MPA matches the given aggregation key.
-func (mpa *Mpa) matchesAggregation(aggregationKey AggregateStateKey) bool {
+func (mpa *Mpa) matchesAggregation(aggregationKey vpa_model.AggregateStateKey) bool {
 	if mpa.ID.Namespace != aggregationKey.Namespace() {
 		return false
 	}
@@ -186,7 +187,7 @@ func (mpa *Mpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameT
 	for containerName, aggregation := range mpa.ContainersInitialAggregateState {
 		aggregateContainerState, found := aggregateContainerStateMap[containerName]
 		if !found {
-			aggregateContainerState = NewAggregateContainerState()
+			aggregateContainerState = vpa_model.NewAggregateContainerState()
 			aggregateContainerStateMap[containerName] = aggregateContainerState
 		}
 		aggregateContainerState.MergeContainerState(aggregation)

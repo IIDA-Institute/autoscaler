@@ -36,227 +36,33 @@ limitations under the License.
 package model
 
 import (
-	"fmt"
-	"math"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
+)
+
+const (
+	// minSampleWeight is the minimal weight of any sample (prior to including decaying factor)
+	// TODO: This variable is also defined in VPA recommender (aggregations_config.go).
+	minSampleWeight = 0.1
 )
 
 // ContainerNameToAggregateStateMap maps a container name to AggregateContainerState
 // that aggregates state of containers with that name.
-type ContainerNameToAggregateStateMap map[string]*AggregateContainerState
+type ContainerNameToAggregateStateMap map[string]*vpa_model.AggregateContainerState
 
-// AggregateContainerState holds input signals aggregated from a set of containers.
-// It can be used as an input to compute the recommendation.
-// The CPU and memory distributions use decaying histograms by default
-// (see NewAggregateContainerState()).
-// Implements ContainerStateAggregator interface.
-// type AggregateContainerState vpa_model.AggregateContainerState
-type AggregateContainerState struct {
-	// AggregateCPUUsage is a distribution of all CPU samples.
-	AggregateCPUUsage util.Histogram
-	// AggregateMemoryPeaks is a distribution of memory peaks from all containers:
-	// each container should add one peak per memory aggregation interval (e.g. once every 24h).
-	AggregateMemoryPeaks util.Histogram
-	// Note: first/last sample timestamps as well as the sample count are based only on CPU samples.
-	FirstSampleStart  time.Time
-	LastSampleStart   time.Time
-	TotalSamplesCount int
-	CreationTime      time.Time
-
-	// Following fields are needed to correctly report quality metrics
-	// for VPA. When we record a new sample in an AggregateContainerState
-	// we want to know if it needs recommendation, if the recommendation
-	// is present and if the automatic updates are on (are we able to
-	// apply the recommendation to the pods).
-	LastRecommendation  corev1.ResourceList
-	IsUnderVPA          bool
-	UpdateMode          *vpa_types.UpdateMode
-	ScalingMode         *vpa_types.ContainerScalingMode
-	ControlledResources *[]vpa_model.ResourceName
-}
-
-// GetLastRecommendation returns last recorded recommendation.
-func (a *AggregateContainerState) GetLastRecommendation() corev1.ResourceList {
-	return a.LastRecommendation
-}
-
-// NeedsRecommendation returns true if the state should have recommendation calculated.
-func (a *AggregateContainerState) NeedsRecommendation() bool {
-	return a.IsUnderVPA && a.ScalingMode != nil && *a.ScalingMode != vpa_types.ContainerScalingModeOff
-}
-
-// GetUpdateMode returns the update mode of VPA controlling this aggregator,
-// nil if aggregator is not autoscaled.
-func (a *AggregateContainerState) GetUpdateMode() *vpa_types.UpdateMode {
-	return a.UpdateMode
-}
-
-// GetScalingMode returns the container scaling mode of the container
-// represented byt his aggregator, nil if aggregator is not autoscaled.
-func (a *AggregateContainerState) GetScalingMode() *vpa_types.ContainerScalingMode {
-	return a.ScalingMode
-}
-
-// GetControlledResources returns the list of resources controlled by VPA controlling this aggregator.
-// Returns default if not set.
-func (a *AggregateContainerState) GetControlledResources() []vpa_model.ResourceName {
-	if a.ControlledResources != nil {
-		return *a.ControlledResources
+func isStateExpired(a *vpa_model.AggregateContainerState, now time.Time) bool {
+	if isStateEmpty(a) {
+		return now.Sub(a.CreationTime) >= vpa_model.GetAggregationsConfig().GetMemoryAggregationWindowLength()
 	}
-	return vpa_model.DefaultControlledResources
+	return now.Sub(a.LastSampleStart) >= vpa_model.GetAggregationsConfig().GetMemoryAggregationWindowLength()
 }
 
-// MarkNotAutoscaled registers that this container state is not controlled by
-// a VPA object.
-func (a *AggregateContainerState) MarkNotAutoscaled() {
-	a.IsUnderVPA = false
-	a.LastRecommendation = nil
-	a.UpdateMode = nil
-	a.ScalingMode = nil
-	a.ControlledResources = nil
-}
-
-// MergeContainerState merges two AggregateContainerStates.
-func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerState) {
-	a.AggregateCPUUsage.Merge(other.AggregateCPUUsage)
-	a.AggregateMemoryPeaks.Merge(other.AggregateMemoryPeaks)
-
-	if a.FirstSampleStart.IsZero() ||
-		(!other.FirstSampleStart.IsZero() && other.FirstSampleStart.Before(a.FirstSampleStart)) {
-		a.FirstSampleStart = other.FirstSampleStart
-	}
-	if other.LastSampleStart.After(a.LastSampleStart) {
-		a.LastSampleStart = other.LastSampleStart
-	}
-	a.TotalSamplesCount += other.TotalSamplesCount
-}
-
-// NewAggregateContainerState returns a new, empty AggregateContainerState.
-func NewAggregateContainerState() *AggregateContainerState {
-	config := GetAggregationsConfig()
-	return &AggregateContainerState{
-		AggregateCPUUsage:    util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
-		AggregateMemoryPeaks: util.NewDecayingHistogram(config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
-		CreationTime:         time.Now(),
-	}
-}
-
-// AddSample aggregates a single usage sample.
-func (a *AggregateContainerState) AddSample(sample *vpa_model.ContainerUsageSample) {
-	switch sample.Resource {
-	case vpa_model.ResourceCPU:
-		a.addCPUSample(sample)
-	case vpa_model.ResourceMemory:
-		a.AggregateMemoryPeaks.AddSample(vpa_model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
-	default:
-		panic(fmt.Sprintf("AddSample doesn't support resource '%s'", sample.Resource))
-	}
-}
-
-// SubtractSample removes a single usage sample from an aggregation.
-// The subtracted sample should be equal to some sample that was aggregated with
-// AddSample() in the past.
-// Only memory samples can be subtracted at the moment. Support for CPU could be
-// added if necessary.
-func (a *AggregateContainerState) SubtractSample(sample *vpa_model.ContainerUsageSample) {
-	switch sample.Resource {
-	case vpa_model.ResourceMemory:
-		a.AggregateMemoryPeaks.SubtractSample(vpa_model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
-	default:
-		panic(fmt.Sprintf("SubtractSample doesn't support resource '%s'", sample.Resource))
-	}
-}
-
-func (a *AggregateContainerState) addCPUSample(sample *vpa_model.ContainerUsageSample) {
-	cpuUsageCores := vpa_model.CoresFromCPUAmount(sample.Usage)
-	cpuRequestCores := vpa_model.CoresFromCPUAmount(sample.Request)
-	// Samples are added with the weight equal to the current request. This means that
-	// whenever the request is increased, the history accumulated so far effectively decays,
-	// which helps react quickly to CPU starvation.
-	a.AggregateCPUUsage.AddSample(
-		cpuUsageCores, math.Max(cpuRequestCores, minSampleWeight), sample.MeasureStart)
-	if sample.MeasureStart.After(a.LastSampleStart) {
-		a.LastSampleStart = sample.MeasureStart
-	}
-	if a.FirstSampleStart.IsZero() || sample.MeasureStart.Before(a.FirstSampleStart) {
-		a.FirstSampleStart = sample.MeasureStart
-	}
-	a.TotalSamplesCount++
-}
-
-// SaveToCheckpoint serializes AggregateContainerState as VerticalPodAutoscalerCheckpointStatus.
-// The serialization may result in loss of precission of the histograms.
-func (a *AggregateContainerState) SaveToCheckpoint() (*vpa_types.VerticalPodAutoscalerCheckpointStatus, error) {
-	memory, err := a.AggregateMemoryPeaks.SaveToChekpoint()
-	if err != nil {
-		return nil, err
-	}
-	cpu, err := a.AggregateCPUUsage.SaveToChekpoint()
-	if err != nil {
-		return nil, err
-	}
-	return &vpa_types.VerticalPodAutoscalerCheckpointStatus{
-		LastUpdateTime:    metav1.NewTime(time.Now()),
-		FirstSampleStart:  metav1.NewTime(a.FirstSampleStart),
-		LastSampleStart:   metav1.NewTime(a.LastSampleStart),
-		TotalSamplesCount: a.TotalSamplesCount,
-		MemoryHistogram:   *memory,
-		CPUHistogram:      *cpu,
-		Version:           vpa_model.SupportedCheckpointVersion,
-	}, nil
-}
-
-// LoadFromCheckpoint deserializes data from VerticalPodAutoscalerCheckpointStatus
-// into the AggregateContainerState.
-func (a *AggregateContainerState) LoadFromCheckpoint(checkpoint *vpa_types.VerticalPodAutoscalerCheckpointStatus) error {
-	if checkpoint.Version != vpa_model.SupportedCheckpointVersion {
-		return fmt.Errorf("unsuported checkpoint version %s", checkpoint.Version)
-	}
-	a.TotalSamplesCount = checkpoint.TotalSamplesCount
-	a.FirstSampleStart = checkpoint.FirstSampleStart.Time
-	a.LastSampleStart = checkpoint.LastSampleStart.Time
-	err := a.AggregateMemoryPeaks.LoadFromCheckpoint(&checkpoint.MemoryHistogram)
-	if err != nil {
-		return err
-	}
-	err = a.AggregateCPUUsage.LoadFromCheckpoint(&checkpoint.CPUHistogram)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (a *AggregateContainerState) isExpired(now time.Time) bool {
-	if a.isEmpty() {
-		return now.Sub(a.CreationTime) >= GetAggregationsConfig().GetMemoryAggregationWindowLength()
-	}
-	return now.Sub(a.LastSampleStart) >= GetAggregationsConfig().GetMemoryAggregationWindowLength()
-}
-
-func (a *AggregateContainerState) isEmpty() bool {
+func isStateEmpty(a *vpa_model.AggregateContainerState) bool {
 	return a.TotalSamplesCount == 0
-}
-
-// UpdateFromPolicy updates container state scaling mode and controlled resources based on resource
-// policy of the VPA object.
-func (a *AggregateContainerState) UpdateFromPolicy(resourcePolicy *vpa_types.ContainerResourcePolicy) {
-	// ContainerScalingModeAuto is the default scaling mode
-	scalingModeAuto := vpa_types.ContainerScalingModeAuto
-	a.ScalingMode = &scalingModeAuto
-	if resourcePolicy != nil && resourcePolicy.Mode != nil {
-		a.ScalingMode = resourcePolicy.Mode
-	}
-	a.ControlledResources = &vpa_model.DefaultControlledResources
-	if resourcePolicy != nil && resourcePolicy.ControlledResources != nil {
-		a.ControlledResources = vpa_model.ResourceNamesApiToModel(*resourcePolicy.ControlledResources)
-	}
 }
 
 // AggregateStateByContainerName takes a set of AggregateContainerStates and merge them
@@ -268,7 +74,7 @@ func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainer
 		containerName := aggregationKey.ContainerName()
 		aggregateContainerState, isInitialized := containerNameToAggregateStateMap[containerName]
 		if !isInitialized {
-			aggregateContainerState = NewAggregateContainerState()
+			aggregateContainerState = vpa_model.NewAggregateContainerState()
 			containerNameToAggregateStateMap[containerName] = aggregateContainerState
 		}
 		aggregateContainerState.MergeContainerState(aggregation)

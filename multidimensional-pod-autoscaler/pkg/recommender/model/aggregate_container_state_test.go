@@ -112,7 +112,7 @@ func TestAggregateStateByContainerName(t *testing.T) {
 	assert.Equal(t, 1, aggregateResources["app-B"].TotalSamplesCount)
 	assert.Equal(t, 1, aggregateResources["app-C"].TotalSamplesCount)
 
-	config := GetAggregationsConfig()
+	config := vpa_model.GetAggregationsConfig()
 	// Compute the expected histograms for the "app-A" containers.
 	expectedCPUHistogram := util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife)
 	expectedCPUHistogram.Merge(cluster.findOrCreateAggregateContainerState(containers[0]).AggregateCPUUsage)
@@ -130,7 +130,7 @@ func TestAggregateStateByContainerName(t *testing.T) {
 
 func TestAggregateContainerStateSaveToCheckpoint(t *testing.T) {
 	location, _ := time.LoadLocation("UTC")
-	cs := NewAggregateContainerState()
+	cs := vpa_model.NewAggregateContainerState()
 	t1, t2 := time.Date(2018, time.January, 1, 2, 3, 4, 0, location), time.Date(2018, time.February, 1, 2, 3, 4, 0, location)
 	cs.FirstSampleStart = t1
 	cs.LastSampleStart = t2
@@ -160,7 +160,7 @@ func TestAggregateContainerStateLoadFromCheckpointFailsForVersionMismatch(t *tes
 	checkpoint := vpa_types.VerticalPodAutoscalerCheckpointStatus{
 		Version: "foo",
 	}
-	cs := NewAggregateContainerState()
+	cs := vpa_model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint)
 	assert.Error(t, err)
 }
@@ -189,7 +189,7 @@ func TestAggregateContainerStateLoadFromCheckpoint(t *testing.T) {
 		},
 	}
 
-	cs := NewAggregateContainerState()
+	cs := vpa_model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint)
 	assert.NoError(t, err)
 
@@ -201,17 +201,17 @@ func TestAggregateContainerStateLoadFromCheckpoint(t *testing.T) {
 }
 
 func TestAggregateContainerStateIsExpired(t *testing.T) {
-	cs := NewAggregateContainerState()
+	cs := vpa_model.NewAggregateContainerState()
 	cs.LastSampleStart = testTimestamp
 	cs.TotalSamplesCount = 1
-	assert.False(t, cs.isExpired(testTimestamp.Add(7*24*time.Hour)))
-	assert.True(t, cs.isExpired(testTimestamp.Add(8*24*time.Hour)))
+	assert.False(t, isStateExpired(cs, testTimestamp.Add(7*24*time.Hour)))
+	assert.True(t, isStateExpired(cs, testTimestamp.Add(8*24*time.Hour)))
 
-	csEmpty := NewAggregateContainerState()
+	csEmpty := vpa_model.NewAggregateContainerState()
 	csEmpty.TotalSamplesCount = 0
 	csEmpty.CreationTime = testTimestamp
-	assert.False(t, csEmpty.isExpired(testTimestamp.Add(7*24*time.Hour)))
-	assert.True(t, csEmpty.isExpired(testTimestamp.Add(8*24*time.Hour)))
+	assert.False(t, isStateExpired(csEmpty, testTimestamp.Add(7*24*time.Hour)))
+	assert.True(t, isStateExpired(csEmpty, testTimestamp.Add(8*24*time.Hour)))
 }
 
 func TestUpdateFromPolicyScalingMode(t *testing.T) {
@@ -246,7 +246,7 @@ func TestUpdateFromPolicyScalingMode(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := NewAggregateContainerState()
+			cs := vpa_model.NewAggregateContainerState()
 			cs.UpdateFromPolicy(tc.policy)
 			assert.Equal(t, tc.expected, cs.GetScalingMode())
 		})
@@ -289,7 +289,7 @@ func TestUpdateFromPolicyControlledResources(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := NewAggregateContainerState()
+			cs := vpa_model.NewAggregateContainerState()
 			cs.UpdateFromPolicy(tc.policy)
 			assert.Equal(t, tc.expected, cs.GetControlledResources())
 		})

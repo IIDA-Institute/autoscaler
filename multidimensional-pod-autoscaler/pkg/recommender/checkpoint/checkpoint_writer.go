@@ -126,7 +126,7 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 // Build the AggregateContainerState for the purpose of the checkpoint. This is an aggregation of state of all
 // containers that belong to pods matched by the MPA.
 // Note however that we exclude the most recent memory peak for each container (see below).
-func buildAggregateContainerStateMap(mpa *model.Mpa, cluster *model.ClusterState, now time.Time) map[string]*model.AggregateContainerState {
+func buildAggregateContainerStateMap(mpa *model.Mpa, cluster *model.ClusterState, now time.Time) map[string]*vpa_model.AggregateContainerState {
 	aggregateContainerStateMap := mpa.AggregateStateByContainerName()
 	// Note: the memory peak from the current (ongoing) aggregation interval is not included in the
 	// checkpoint to avoid having multiple peaks in the same interval after the state is restored from
@@ -145,7 +145,7 @@ func buildAggregateContainerStateMap(mpa *model.Mpa, cluster *model.ClusterState
 	return aggregateContainerStateMap
 }
 
-func subtractCurrentContainerMemoryPeak(a *model.AggregateContainerState, container *model.ContainerState, now time.Time) {
+func subtractCurrentContainerMemoryPeak(a *vpa_model.AggregateContainerState, container *model.ContainerState, now time.Time) {
 	if now.Before(container.WindowEnd) {
 		a.AggregateMemoryPeaks.SubtractSample(vpa_model.BytesFromMemoryAmount(container.GetMaxMemoryPeak()), 1.0, container.WindowEnd)
 	}

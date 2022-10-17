@@ -273,7 +273,7 @@ func (feeder *clusterStateFeeder) setMpaCheckpoint(checkpoint *vpa_types.Vertica
 		return fmt.Errorf("cannot load checkpoint to missing MPA object %+v", mpaID)
 	}
 
-	cs := model.NewAggregateContainerState()
+	cs := vpa_model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint.Status)
 	if err != nil {
 		return fmt.Errorf("cannot load checkpoint for MPA %+v. Reason: %v", mpa.ID, err)

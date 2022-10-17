@@ -68,14 +68,6 @@ func (cluster *ClusterState) StateMapSize() int {
 	return len(cluster.aggregateStateMap)
 }
 
-// AggregateStateKey determines the set of containers for which the usage samples
-// are kept aggregated in the model.
-type AggregateStateKey interface {
-	Namespace() string
-	ContainerName() string
-	Labels() labels.Labels
-}
-
 // String representation of the labels.LabelSet. This is the value returned by
 // labelSet.String(). As opposed to the LabelSet object, it can be used as a map key.
 type labelSetKey string
@@ -84,7 +76,7 @@ type labelSetKey string
 type labelSetMap map[labelSetKey]labels.Set
 
 // AggregateContainerStatesMap is a map from AggregateStateKey to AggregateContainerState.
-type aggregateContainerStatesMap map[AggregateStateKey]*AggregateContainerState
+type aggregateContainerStatesMap map[vpa_model.AggregateStateKey]*vpa_model.AggregateContainerState
 
 // PodState holds runtime information about a single Pod.
 type PodState struct {
@@ -316,7 +308,7 @@ func (cluster *ClusterState) getLabelSetKey(labelSet labels.Set) labelSetKey {
 
 // MakeAggregateStateKey returns the AggregateStateKey that should be used
 // to aggregate usage samples from a container with the given name in a given pod.
-func (cluster *ClusterState) MakeAggregateStateKey(pod *PodState, containerName string) AggregateStateKey {
+func (cluster *ClusterState) MakeAggregateStateKey(pod *PodState, containerName string) vpa_model.AggregateStateKey {
 	return aggregateStateKey{
 		namespace:     pod.ID.Namespace,
 		containerName: containerName,
@@ -327,7 +319,7 @@ func (cluster *ClusterState) MakeAggregateStateKey(pod *PodState, containerName 
 
 // aggregateStateKeyForContainerID returns the AggregateStateKey for the ContainerID.
 // The pod with the corresponding PodID must already be present in the ClusterState.
-func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID vpa_model.ContainerID) AggregateStateKey {
+func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID vpa_model.ContainerID) vpa_model.AggregateStateKey {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
 		panic(fmt.Sprintf("Pod not present in the ClusterState: %v", containerID.PodID))
@@ -338,11 +330,11 @@ func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID vpa_mod
 // findOrCreateAggregateContainerState returns (possibly newly created) AggregateContainerState
 // that should be used to aggregate usage samples from container with a given ID.
 // The pod with the corresponding PodID must already be present in the ClusterState.
-func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID vpa_model.ContainerID) *AggregateContainerState {
+func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID vpa_model.ContainerID) *vpa_model.AggregateContainerState {
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(containerID)
 	aggregateContainerState, aggregateStateExists := cluster.aggregateStateMap[aggregateStateKey]
 	if !aggregateStateExists {
-		aggregateContainerState = NewAggregateContainerState()
+		aggregateContainerState = vpa_model.NewAggregateContainerState()
 		cluster.aggregateStateMap[aggregateStateKey] = aggregateContainerState
 		// Link the new aggregation to the existing VPAs.
 		for _, mpa := range cluster.Mpas {
@@ -363,16 +355,16 @@ func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID vpa
 // 3) There are no samples and the aggregate state was created >8 days ago.
 func (cluster *ClusterState) garbageCollectAggregateCollectionStates(now time.Time, controllerFetcher controllerfetcher.ControllerFetcher) {
 	klog.V(1).Info("Garbage collection of AggregateCollectionStates triggered")
-	keysToDelete := make([]AggregateStateKey, 0)
+	keysToDelete := make([]vpa_model.AggregateStateKey, 0)
 	contributiveKeys := cluster.getContributiveAggregateStateKeys(controllerFetcher)
 	for key, aggregateContainerState := range cluster.aggregateStateMap {
 		isKeyContributive := contributiveKeys[key]
-		if !isKeyContributive && aggregateContainerState.isEmpty() {
+		if !isKeyContributive && isStateEmpty(aggregateContainerState) {
 			keysToDelete = append(keysToDelete, key)
 			klog.V(1).Infof("Removing empty and not contributive AggregateCollectionState for %+v", key)
 			continue
 		}
-		if aggregateContainerState.isExpired(now) {
+		if isStateExpired(aggregateContainerState, now) {
 			keysToDelete = append(keysToDelete, key)
 			klog.V(1).Infof("Removing expired AggregateCollectionState for %+v", key)
 		}
@@ -403,8 +395,8 @@ func (cluster *ClusterState) RateLimitedGarbageCollectAggregateCollectionStates(
 	cluster.lastAggregateContainerStateGC = now
 }
 
-func (cluster *ClusterState) getContributiveAggregateStateKeys(controllerFetcher controllerfetcher.ControllerFetcher) map[AggregateStateKey]bool {
-	contributiveKeys := map[AggregateStateKey]bool{}
+func (cluster *ClusterState) getContributiveAggregateStateKeys(controllerFetcher controllerfetcher.ControllerFetcher) map[vpa_model.AggregateStateKey]bool {
+	contributiveKeys := map[vpa_model.AggregateStateKey]bool{}
 	for _, pod := range cluster.Pods {
 		// Pod is considered contributive in any of following situations:
 		// 1) It is in active state - i.e. not PodSucceeded nor PodFailed.
