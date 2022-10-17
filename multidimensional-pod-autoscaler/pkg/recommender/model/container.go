@@ -46,11 +46,11 @@ type ContainerState struct {
 	// Start of the latest memory usage sample that was aggregated.
 	lastMemorySampleStart time.Time
 	// Aggregation to add usage samples to.
-	aggregator ContainerStateAggregator
+	aggregator vpa_model.ContainerStateAggregator
 }
 
 // NewContainerState returns a new ContainerState.
-func NewContainerState(request vpa_model.Resources, aggregator ContainerStateAggregator) *ContainerState {
+func NewContainerState(request vpa_model.Resources, aggregator vpa_model.ContainerStateAggregator) *ContainerState {
 	return &ContainerState{
 		Request:               request,
 		LastCPUSampleStart:    time.Time{},

@@ -590,10 +590,10 @@ func TestEqualAggregateStateKey(t *testing.T) {
 // Verify that two containers with the same name, living in two pods with the same namespace and labels
 // (although different pod names) are aggregated together.
 func TestTwoPodsWithSameLabels(t *testing.T) {
-	podID1 := vpa_model.PodID{"namespace-1", "pod-1"}
-	podID2 := vpa_model.PodID{"namespace-1", "pod-2"}
-	containerID1 := vpa_model.ContainerID{podID1, "foo-container"}
-	containerID2 := vpa_model.ContainerID{podID2, "foo-container"}
+	podID1 := vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-1"}
+	podID2 := vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-2"}
+	containerID1 := vpa_model.ContainerID{PodID: podID1, ContainerName: "foo-container"}
+	containerID2 := vpa_model.ContainerID{PodID: podID2, ContainerName: "foo-container"}
 
 	cluster := NewClusterState(testGcPeriod)
 	cluster.AddOrUpdatePod(podID1, testLabels, apiv1.PodRunning)
@@ -609,10 +609,10 @@ func TestTwoPodsWithSameLabels(t *testing.T) {
 
 // Verify that two identical containers in different namespaces are not aggregated together.
 func TestTwoPodsWithDifferentNamespaces(t *testing.T) {
-	podID1 := vpa_model.PodID{"namespace-1", "foo-pod"}
-	podID2 := vpa_model.PodID{"namespace-2", "foo-pod"}
-	containerID1 := vpa_model.ContainerID{podID1, "foo-container"}
-	containerID2 := vpa_model.ContainerID{podID2, "foo-container"}
+	podID1 := vpa_model.PodID{Namespace: "namespace-1", PodName: "foo-pod"}
+	podID2 := vpa_model.PodID{Namespace: "namespace-2", PodName: "foo-pod"}
+	containerID1 := vpa_model.ContainerID{PodID: podID1, ContainerName: "foo-container"}
+	containerID2 := vpa_model.ContainerID{PodID: podID2, ContainerName: "foo-container"}
 
 	cluster := NewClusterState(testGcPeriod)
 	cluster.AddOrUpdatePod(podID1, testLabels, apiv1.PodRunning)
@@ -636,13 +636,13 @@ func TestEmptySelector(t *testing.T) {
 	mpa := addMpa(cluster, testMpaID, testAnnotations, "", testTargetRef)
 	// Create a pod with labels. Add a container.
 	cluster.AddOrUpdatePod(testPodID, testLabels, apiv1.PodRunning)
-	containerID1 := vpa_model.ContainerID{testPodID, "foo"}
+	containerID1 := vpa_model.ContainerID{PodID: testPodID, ContainerName: "foo"}
 	assert.NoError(t, cluster.AddOrUpdateContainer(containerID1, testRequest))
 
 	// Create a pod without labels. Add a container.
-	anotherPodID := vpa_model.PodID{"namespace-1", "pod-2"}
+	anotherPodID := vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-2"}
 	cluster.AddOrUpdatePod(anotherPodID, emptyLabels, apiv1.PodRunning)
-	containerID2 := vpa_model.ContainerID{anotherPodID, "foo"}
+	containerID2 := vpa_model.ContainerID{PodID: anotherPodID, ContainerName: "foo"}
 	assert.NoError(t, cluster.AddOrUpdateContainer(containerID2, testRequest))
 
 	// Both pods should be matched by the MPA.
@@ -862,7 +862,7 @@ func TestMPAWithMatchingPods(t *testing.T) {
 			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)
 			for _, podDesc := range tc.pods {
 				cluster.AddOrUpdatePod(podDesc.id, podDesc.labels, podDesc.phase)
-				containerID := vpa_model.ContainerID{testPodID, "foo"}
+				containerID := vpa_model.ContainerID{PodID: testPodID, ContainerName: "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
 			assert.Equal(t, tc.expectedMatch, cluster.Mpas[mpa.ID].PodCount)
@@ -874,7 +874,7 @@ func TestMPAWithMatchingPods(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
 			for _, podDesc := range tc.pods {
 				cluster.AddOrUpdatePod(podDesc.id, podDesc.labels, podDesc.phase)
-				containerID := vpa_model.ContainerID{testPodID, "foo"}
+				containerID := vpa_model.ContainerID{PodID: testPodID, ContainerName: "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
 			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)

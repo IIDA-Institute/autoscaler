@@ -52,26 +52,6 @@ import (
 // that aggregates state of containers with that name.
 type ContainerNameToAggregateStateMap map[string]*AggregateContainerState
 
-// ContainerStateAggregator is an interface for objects that consume and
-// aggregate container usage samples.
-type ContainerStateAggregator interface {
-	// AddSample aggregates a single usage sample.
-	AddSample(sample *vpa_model.ContainerUsageSample)
-	// SubtractSample removes a single usage sample. The subtracted sample
-	// should be equal to some sample that was aggregated with AddSample()
-	// in the past.
-	SubtractSample(sample *vpa_model.ContainerUsageSample)
-	// GetLastRecommendation returns last recommendation calculated for this
-	// aggregator.
-	GetLastRecommendation() corev1.ResourceList
-	// NeedsRecommendation returns true if this aggregator should have
-	// a recommendation calculated.
-	NeedsRecommendation() bool
-	// GetUpdateMode returns the update mode of VPA controlling this aggregator,
-	// nil if aggregator is not autoscaled.
-	GetUpdateMode() *vpa_types.UpdateMode
-}
-
 // AggregateContainerState holds input signals aggregated from a set of containers.
 // It can be used as an input to compute the recommendation.
 // The CPU and memory distributions use decaying histograms by default
@@ -306,7 +286,7 @@ type ContainerStateAggregatorProxy struct {
 
 // NewContainerStateAggregatorProxy creates a ContainerStateAggregatorProxy
 // pointing to the cluster state.
-func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID vpa_model.ContainerID) ContainerStateAggregator {
+func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID vpa_model.ContainerID) vpa_model.ContainerStateAggregator {
 	return &ContainerStateAggregatorProxy{containerID, cluster}
 }
 

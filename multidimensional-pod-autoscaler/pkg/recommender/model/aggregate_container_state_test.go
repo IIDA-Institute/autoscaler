@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	testPodID1  = vpa_model.PodID{"namespace-1", "pod-1"}
-	testPodID2  = vpa_model.PodID{"namespace-1", "pod-2"}
+	testPodID1  = vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-1"}
+	testPodID2  = vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-2"}
 	testRequest = vpa_model.Resources{
 		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
 		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
@@ -81,10 +81,10 @@ func TestAggregateStateByContainerName(t *testing.T) {
 
 	// Create 4 containers: 2 with the same name and 2 with different names.
 	containers := []vpa_model.ContainerID{
-		{testPodID1, "app-A"},
-		{testPodID1, "app-B"},
-		{testPodID2, "app-A"},
-		{testPodID2, "app-C"},
+		{PodID: testPodID1, ContainerName: "app-A"},
+		{PodID: testPodID1, ContainerName: "app-B"},
+		{PodID: testPodID2, ContainerName: "app-A"},
+		{PodID: testPodID2, ContainerName: "app-C"},
 	}
 	for _, c := range containers {
 		assert.NoError(t, cluster.AddOrUpdateContainer(c, testRequest))
