@@ -26,19 +26,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ContainerUsageSample is a measure of resource usage of a container over some
-// interval.
-type ContainerUsageSample struct {
-	// Start of the measurement interval.
-	MeasureStart time.Time
-	// Average CPU usage in cores or memory usage in bytes.
-	Usage vpa_model.ResourceAmount
-	// CPU or memory request at the time of measurment.
-	Request vpa_model.ResourceAmount
-	// Which resource is this sample for.
-	Resource vpa_model.ResourceName
-}
-
 // ContainerState stores information about a single container instance.
 // Each ContainerState has a pointer to the aggregation that is used for
 // aggregating its usage samples.
@@ -73,13 +60,9 @@ func NewContainerState(request vpa_model.Resources, aggregator ContainerStateAgg
 	}
 }
 
-func (sample *ContainerUsageSample) isValid(expectedResource vpa_model.ResourceName) bool {
-	return sample.Usage >= 0 && sample.Resource == expectedResource
-}
-
-func (container *ContainerState) addCPUSample(sample *ContainerUsageSample) bool {
+func (container *ContainerState) addCPUSample(sample *vpa_model.ContainerUsageSample) bool {
 	// Order should not matter for the histogram, other than deduplication.
-	if !sample.isValid(vpa_model.ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
+	if !(sample.Usage >= 0 && sample.Resource == vpa_model.ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
 		return false // Discard invalid, duplicate or out-of-order samples.
 	}
 	container.observeQualityMetrics(sample.Usage, false, corev1.ResourceCPU)
@@ -127,10 +110,10 @@ func (container *ContainerState) GetMaxMemoryPeak() vpa_model.ResourceAmount {
 	return vpa_model.ResourceAmountMax(container.memoryPeak, container.oomPeak)
 }
 
-func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, isOOM bool) bool {
+func (container *ContainerState) addMemorySample(sample *vpa_model.ContainerUsageSample, isOOM bool) bool {
 	ts := sample.MeasureStart
 	// We always process OOM samples.
-	if !sample.isValid(vpa_model.ResourceMemory) ||
+	if !(sample.Usage >= 0 && sample.Resource == vpa_model.ResourceMemory) ||
 		(!isOOM && ts.Before(container.lastMemorySampleStart)) {
 		return false // Discard invalid or outdated samples.
 	}
@@ -148,7 +131,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 		oldMaxMem := container.GetMaxMemoryPeak()
 		if oldMaxMem != 0 && sample.Usage > oldMaxMem {
 			// Remove the old peak.
-			oldPeak := ContainerUsageSample{
+			oldPeak := vpa_model.ContainerUsageSample{
 				MeasureStart: container.WindowEnd,
 				Usage:        oldMaxMem,
 				Request:      sample.Request,
@@ -168,7 +151,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 	}
 	container.observeQualityMetrics(sample.Usage, isOOM, corev1.ResourceMemory)
 	if addNewPeak {
-		newPeak := ContainerUsageSample{
+		newPeak := vpa_model.ContainerUsageSample{
 			MeasureStart: container.WindowEnd,
 			Usage:        sample.Usage,
 			Request:      sample.Request,
@@ -196,7 +179,7 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 	memoryNeeded := vpa_model.ResourceAmountMax(memoryUsed+vpa_model.MemoryAmountFromBytes(vpa_model.OOMMinBumpUp),
 	vpa_model.ScaleResource(memoryUsed, vpa_model.OOMBumpUpRatio))
 
-	oomMemorySample := ContainerUsageSample{
+	oomMemorySample := vpa_model.ContainerUsageSample{
 		MeasureStart: timestamp,
 		Usage:        memoryNeeded,
 		Resource:     vpa_model.ResourceMemory,
@@ -214,7 +197,7 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 // was discarded.
 // Note: usage samples don't hold their end timestamp / duration. They are
 // implicitly assumed to be disjoint when aggregating.
-func (container *ContainerState) AddSample(sample *ContainerUsageSample) bool {
+func (container *ContainerState) AddSample(sample *vpa_model.ContainerUsageSample) bool {
 	switch sample.Resource {
 	case vpa_model.ResourceCPU:
 		return container.addCPUSample(sample)

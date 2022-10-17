@@ -75,7 +75,7 @@ func (f *fakeControllerFetcher) FindTopMostWellKnownOrScalable(controller *contr
 const testGcPeriod = time.Minute
 
 func makeTestUsageSample() *ContainerUsageSampleWithKey {
-	return &ContainerUsageSampleWithKey{ContainerUsageSample{
+	return &ContainerUsageSampleWithKey{vpa_model.ContainerUsageSample{
 		MeasureStart: testTimestamp,
 		Usage:        1.0,
 		Request:      testRequest[vpa_model.ResourceCPU],
@@ -260,7 +260,7 @@ func TestAddSampleAfterAggregateContainerStateGCed(t *testing.T) {
 	assert.Empty(t, mpa.aggregateContainerStates)
 	assert.Contains(t, pod.Containers, testContainerID.ContainerName)
 
-	newUsageSample := &ContainerUsageSampleWithKey{ContainerUsageSample{
+	newUsageSample := &ContainerUsageSampleWithKey{vpa_model.ContainerUsageSample{
 		MeasureStart: gcTimestamp.Add(1 * time.Hour),
 		Usage:        usageSample.Usage,
 		Request:      usageSample.Request,

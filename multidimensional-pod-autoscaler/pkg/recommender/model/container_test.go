@@ -40,8 +40,8 @@ const (
 	mb = 1024 * kb
 )
 
-func newUsageSample(timestamp time.Time, usage int64, resource vpa_model.ResourceName) *ContainerUsageSample {
-	return &ContainerUsageSample{
+func newUsageSample(timestamp time.Time, usage int64, resource vpa_model.ResourceName) *vpa_model.ContainerUsageSample {
+	return &vpa_model.ContainerUsageSample{
 		MeasureStart: timestamp,
 		Usage:        vpa_model.ResourceAmount(usage),
 		Request:      TestRequest[resource],

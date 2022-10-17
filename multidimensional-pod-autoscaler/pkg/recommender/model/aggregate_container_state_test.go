@@ -41,7 +41,7 @@ var (
 func addTestCPUSample(cluster *ClusterState, container vpa_model.ContainerID, cpuCores float64) error {
 	sample := ContainerUsageSampleWithKey{
 		Container: container,
-		ContainerUsageSample: ContainerUsageSample{
+		ContainerUsageSample: vpa_model.ContainerUsageSample{
 			MeasureStart: testTimestamp,
 			Usage:        vpa_model.CPUAmountFromCores(cpuCores),
 			Request:      testRequest[vpa_model.ResourceCPU],
@@ -54,7 +54,7 @@ func addTestCPUSample(cluster *ClusterState, container vpa_model.ContainerID, cp
 func addTestMemorySample(cluster *ClusterState, container vpa_model.ContainerID, memoryBytes float64) error {
 	sample := ContainerUsageSampleWithKey{
 		Container: container,
-		ContainerUsageSample: ContainerUsageSample{
+		ContainerUsageSample: vpa_model.ContainerUsageSample{
 			MeasureStart: testTimestamp,
 			Usage:        vpa_model.MemoryAmountFromBytes(memoryBytes),
 			Request:      testRequest[vpa_model.ResourceMemory],

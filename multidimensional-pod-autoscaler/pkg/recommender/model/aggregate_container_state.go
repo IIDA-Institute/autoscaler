@@ -56,11 +56,11 @@ type ContainerNameToAggregateStateMap map[string]*AggregateContainerState
 // aggregate container usage samples.
 type ContainerStateAggregator interface {
 	// AddSample aggregates a single usage sample.
-	AddSample(sample *ContainerUsageSample)
+	AddSample(sample *vpa_model.ContainerUsageSample)
 	// SubtractSample removes a single usage sample. The subtracted sample
 	// should be equal to some sample that was aggregated with AddSample()
 	// in the past.
-	SubtractSample(sample *ContainerUsageSample)
+	SubtractSample(sample *vpa_model.ContainerUsageSample)
 	// GetLastRecommendation returns last recommendation calculated for this
 	// aggregator.
 	GetLastRecommendation() corev1.ResourceList
@@ -169,7 +169,7 @@ func NewAggregateContainerState() *AggregateContainerState {
 }
 
 // AddSample aggregates a single usage sample.
-func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) AddSample(sample *vpa_model.ContainerUsageSample) {
 	switch sample.Resource {
 	case vpa_model.ResourceCPU:
 		a.addCPUSample(sample)
@@ -185,7 +185,7 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 // AddSample() in the past.
 // Only memory samples can be subtracted at the moment. Support for CPU could be
 // added if necessary.
-func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) SubtractSample(sample *vpa_model.ContainerUsageSample) {
 	switch sample.Resource {
 	case vpa_model.ResourceMemory:
 		a.AggregateMemoryPeaks.SubtractSample(vpa_model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
@@ -194,7 +194,7 @@ func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
 	}
 }
 
-func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) addCPUSample(sample *vpa_model.ContainerUsageSample) {
 	cpuUsageCores := vpa_model.CoresFromCPUAmount(sample.Usage)
 	cpuRequestCores := vpa_model.CoresFromCPUAmount(sample.Request)
 	// Samples are added with the weight equal to the current request. This means that
@@ -311,13 +311,13 @@ func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID vpa_mod
 }
 
 // AddSample adds a container sample to the aggregator.
-func (p *ContainerStateAggregatorProxy) AddSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) AddSample(sample *vpa_model.ContainerUsageSample) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.AddSample(sample)
 }
 
 // SubtractSample subtracts a container sample from the aggregator.
-func (p *ContainerStateAggregatorProxy) SubtractSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) SubtractSample(sample *vpa_model.ContainerUsageSample) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.SubtractSample(sample)
 }

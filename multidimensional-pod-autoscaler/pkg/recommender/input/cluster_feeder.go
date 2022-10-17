@@ -254,15 +254,9 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 			}
 			klog.V(4).Infof("Adding %d samples for container %v", len(sampleList), containerID)
 			for _, sample := range sampleList {
-				sample_mpa := model.ContainerUsageSample{
-					MeasureStart: sample.MeasureStart,
-					Usage: sample.Usage,
-					Request: sample.Request,
-					Resource: sample.Resource,
-				}
 				if err := feeder.clusterState.AddSample(
 					&model.ContainerUsageSampleWithKey{
-						ContainerUsageSample: sample_mpa,
+						ContainerUsageSample: sample,
 						Container:            containerID,
 					}); err != nil {
 					klog.Warningf("Error adding metric sample for container %v: %v", containerID, err)
@@ -517,7 +511,7 @@ func newContainerUsageSamplesWithKey(metrics *metrics.ContainerMetricsSnapshot) 
 	for metricName, resourceAmount := range metrics.Usage {
 		sample := &model.ContainerUsageSampleWithKey{
 			Container: metrics.ID,
-			ContainerUsageSample: model.ContainerUsageSample{
+			ContainerUsageSample: vpa_model.ContainerUsageSample{
 				MeasureStart: metrics.SnapshotTime,
 				Resource:     metricName,
 				Usage:        resourceAmount,

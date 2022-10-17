@@ -114,7 +114,7 @@ func NewClusterState(gcInterval time.Duration) *ClusterState {
 // ContainerUsageSampleWithKey holds a ContainerUsageSample together with the
 // ID of the container it belongs to.
 type ContainerUsageSampleWithKey struct {
-	ContainerUsageSample
+	vpa_model.ContainerUsageSample
 	Container vpa_model.ContainerID
 }
 
