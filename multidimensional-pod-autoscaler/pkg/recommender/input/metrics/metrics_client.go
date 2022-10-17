@@ -22,7 +22,7 @@ import (
 
 	k8sapiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	recommender_metrics "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	klog "k8s.io/klog/v2"
 	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
@@ -32,13 +32,13 @@ import (
 // ContainerMetricsSnapshot contains information about usage of certain container within defined time window.
 type ContainerMetricsSnapshot struct {
 	// ID identifies a specific container those metrics are coming from.
-	ID model.ContainerID
+	ID vpa_model.ContainerID
 	// End time of the measurement interval.
 	SnapshotTime time.Time
 	// Duration of the measurement interval, which is [SnapshotTime - SnapshotWindow, SnapshotTime].
 	SnapshotWindow time.Duration
 	// Actual usage of the resources over the measurement interval.
-	Usage model.Resources
+	Usage vpa_model.Resources
 }
 
 // MetricsClient provides simple metrics on resources usage on containter level.
@@ -94,9 +94,9 @@ func newContainerMetricsSnapshot(containerMetrics v1beta1.ContainerMetrics, podM
 	usage := calculateUsage(containerMetrics.Usage)
 
 	return &ContainerMetricsSnapshot{
-		ID: model.ContainerID{
+		ID: vpa_model.ContainerID{
 			ContainerName: containerMetrics.Name,
-			PodID: model.PodID{
+			PodID: vpa_model.PodID{
 				Namespace: podMetrics.Namespace,
 				PodName:   podMetrics.Name,
 			},
@@ -107,15 +107,15 @@ func newContainerMetricsSnapshot(containerMetrics v1beta1.ContainerMetrics, podM
 	}
 }
 
-func calculateUsage(containerUsage k8sapiv1.ResourceList) model.Resources {
+func calculateUsage(containerUsage k8sapiv1.ResourceList) vpa_model.Resources {
 	cpuQuantity := containerUsage[k8sapiv1.ResourceCPU]
 	cpuMillicores := cpuQuantity.MilliValue()
 
 	memoryQuantity := containerUsage[k8sapiv1.ResourceMemory]
 	memoryBytes := memoryQuantity.Value()
 
-	return model.Resources{
-		model.ResourceCPU:    model.ResourceAmount(cpuMillicores),
-		model.ResourceMemory: model.ResourceAmount(memoryBytes),
+	return vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.ResourceAmount(cpuMillicores),
+		vpa_model.ResourceMemory: vpa_model.ResourceAmount(memoryBytes),
 	}
 }

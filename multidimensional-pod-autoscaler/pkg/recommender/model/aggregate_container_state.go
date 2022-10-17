@@ -42,7 +42,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
@@ -56,11 +58,6 @@ const (
 	// version of the recommender binary can't initialize from the old checkpoint format or the
 	// previous version of the recommender binary can't initialize from the new checkpoint format.
 	SupportedCheckpointVersion = "v3"
-)
-
-var (
-	// DefaultControlledResources is a default value of Spec.ResourcePolicy.ContainerPolicies[].ControlledResources.
-	DefaultControlledResources = []ResourceName{ResourceCPU, ResourceMemory}
 )
 
 // ContainerStateAggregator is an interface for objects that consume and
@@ -88,6 +85,7 @@ type ContainerStateAggregator interface {
 // The CPU and memory distributions use decaying histograms by default
 // (see NewAggregateContainerState()).
 // Implements ContainerStateAggregator interface.
+// type AggregateContainerState vpa_model.AggregateContainerState
 type AggregateContainerState struct {
 	// AggregateCPUUsage is a distribution of all CPU samples.
 	AggregateCPUUsage util.Histogram
@@ -109,7 +107,7 @@ type AggregateContainerState struct {
 	IsUnderVPA          bool
 	UpdateMode          *vpa_types.UpdateMode
 	ScalingMode         *vpa_types.ContainerScalingMode
-	ControlledResources *[]ResourceName
+	ControlledResources *[]vpa_model.ResourceName
 }
 
 // GetLastRecommendation returns last recorded recommendation.
@@ -136,11 +134,11 @@ func (a *AggregateContainerState) GetScalingMode() *vpa_types.ContainerScalingMo
 
 // GetControlledResources returns the list of resources controlled by VPA controlling this aggregator.
 // Returns default if not set.
-func (a *AggregateContainerState) GetControlledResources() []ResourceName {
+func (a *AggregateContainerState) GetControlledResources() []vpa_model.ResourceName {
 	if a.ControlledResources != nil {
 		return *a.ControlledResources
 	}
-	return DefaultControlledResources
+	return vpa_model.DefaultControlledResources
 }
 
 // MarkNotAutoscaled registers that this container state is not controlled by
@@ -181,10 +179,10 @@ func NewAggregateContainerState() *AggregateContainerState {
 // AddSample aggregates a single usage sample.
 func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 	switch sample.Resource {
-	case ResourceCPU:
+	case vpa_model.ResourceCPU:
 		a.addCPUSample(sample)
-	case ResourceMemory:
-		a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	case vpa_model.ResourceMemory:
+		a.AggregateMemoryPeaks.AddSample(vpa_model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	default:
 		panic(fmt.Sprintf("AddSample doesn't support resource '%s'", sample.Resource))
 	}
@@ -197,16 +195,16 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 // added if necessary.
 func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
 	switch sample.Resource {
-	case ResourceMemory:
-		a.AggregateMemoryPeaks.SubtractSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	case vpa_model.ResourceMemory:
+		a.AggregateMemoryPeaks.SubtractSample(vpa_model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	default:
 		panic(fmt.Sprintf("SubtractSample doesn't support resource '%s'", sample.Resource))
 	}
 }
 
 func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
-	cpuUsageCores := CoresFromCPUAmount(sample.Usage)
-	cpuRequestCores := CoresFromCPUAmount(sample.Request)
+	cpuUsageCores := vpa_model.CoresFromCPUAmount(sample.Usage)
+	cpuRequestCores := vpa_model.CoresFromCPUAmount(sample.Request)
 	// Samples are added with the weight equal to the current request. This means that
 	// whenever the request is increased, the history accumulated so far effectively decays,
 	// which helps react quickly to CPU starvation.
@@ -283,9 +281,9 @@ func (a *AggregateContainerState) UpdateFromPolicy(resourcePolicy *vpa_types.Con
 	if resourcePolicy != nil && resourcePolicy.Mode != nil {
 		a.ScalingMode = resourcePolicy.Mode
 	}
-	a.ControlledResources = &DefaultControlledResources
+	a.ControlledResources = &vpa_model.DefaultControlledResources
 	if resourcePolicy != nil && resourcePolicy.ControlledResources != nil {
-		a.ControlledResources = ResourceNamesApiToModel(*resourcePolicy.ControlledResources)
+		a.ControlledResources = vpa_model.ResourceNamesApiToModel(*resourcePolicy.ControlledResources)
 	}
 }
 
@@ -310,13 +308,13 @@ func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainer
 // that creates ContainerStateAgregator for container if it is no longer
 // present in the cluster state.
 type ContainerStateAggregatorProxy struct {
-	containerID ContainerID
+	containerID vpa_model.ContainerID
 	cluster     *ClusterState
 }
 
 // NewContainerStateAggregatorProxy creates a ContainerStateAggregatorProxy
 // pointing to the cluster state.
-func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID ContainerID) ContainerStateAggregator {
+func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID vpa_model.ContainerID) ContainerStateAggregator {
 	return &ContainerStateAggregatorProxy{containerID, cluster}
 }
 

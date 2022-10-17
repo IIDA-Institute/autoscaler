@@ -25,39 +25,40 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
 var (
-	testPodID1  = PodID{"namespace-1", "pod-1"}
-	testPodID2  = PodID{"namespace-1", "pod-2"}
-	testRequest = Resources{
-		ResourceCPU:    CPUAmountFromCores(3.14),
-		ResourceMemory: MemoryAmountFromBytes(3.14e9),
+	testPodID1  = vpa_model.PodID{"namespace-1", "pod-1"}
+	testPodID2  = vpa_model.PodID{"namespace-1", "pod-2"}
+	testRequest = vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	}
 )
 
-func addTestCPUSample(cluster *ClusterState, container ContainerID, cpuCores float64) error {
+func addTestCPUSample(cluster *ClusterState, container vpa_model.ContainerID, cpuCores float64) error {
 	sample := ContainerUsageSampleWithKey{
 		Container: container,
 		ContainerUsageSample: ContainerUsageSample{
 			MeasureStart: testTimestamp,
-			Usage:        CPUAmountFromCores(cpuCores),
-			Request:      testRequest[ResourceCPU],
-			Resource:     ResourceCPU,
+			Usage:        vpa_model.CPUAmountFromCores(cpuCores),
+			Request:      testRequest[vpa_model.ResourceCPU],
+			Resource:     vpa_model.ResourceCPU,
 		},
 	}
 	return cluster.AddSample(&sample)
 }
 
-func addTestMemorySample(cluster *ClusterState, container ContainerID, memoryBytes float64) error {
+func addTestMemorySample(cluster *ClusterState, container vpa_model.ContainerID, memoryBytes float64) error {
 	sample := ContainerUsageSampleWithKey{
 		Container: container,
 		ContainerUsageSample: ContainerUsageSample{
 			MeasureStart: testTimestamp,
-			Usage:        MemoryAmountFromBytes(memoryBytes),
-			Request:      testRequest[ResourceMemory],
-			Resource:     ResourceMemory,
+			Usage:        vpa_model.MemoryAmountFromBytes(memoryBytes),
+			Request:      testRequest[vpa_model.ResourceMemory],
+			Resource:     vpa_model.ResourceMemory,
 		},
 	}
 	return cluster.AddSample(&sample)
@@ -79,7 +80,7 @@ func TestAggregateStateByContainerName(t *testing.T) {
 	cluster.AddOrUpdatePod(testPodID2, otherLabels, apiv1.PodRunning)
 
 	// Create 4 containers: 2 with the same name and 2 with different names.
-	containers := []ContainerID{
+	containers := []vpa_model.ContainerID{
 		{testPodID1, "app-A"},
 		{testPodID1, "app-B"},
 		{testPodID2, "app-A"},
@@ -256,34 +257,34 @@ func TestUpdateFromPolicyControlledResources(t *testing.T) {
 	testCases := []struct {
 		name     string
 		policy   *vpa_types.ContainerResourcePolicy
-		expected []ResourceName
+		expected []vpa_model.ResourceName
 	}{
 		{
 			name: "Explicit ControlledResources",
 			policy: &vpa_types.ContainerResourcePolicy{
 				ControlledResources: &[]apiv1.ResourceName{apiv1.ResourceCPU, apiv1.ResourceMemory},
 			},
-			expected: []ResourceName{ResourceCPU, ResourceMemory},
+			expected: []vpa_model.ResourceName{vpa_model.ResourceCPU, vpa_model.ResourceMemory},
 		}, {
 			name: "Empty ControlledResources",
 			policy: &vpa_types.ContainerResourcePolicy{
 				ControlledResources: &[]apiv1.ResourceName{},
 			},
-			expected: []ResourceName{},
+			expected: []vpa_model.ResourceName{},
 		}, {
 			name: "ControlledResources with one resource",
 			policy: &vpa_types.ContainerResourcePolicy{
 				ControlledResources: &[]apiv1.ResourceName{apiv1.ResourceMemory},
 			},
-			expected: []ResourceName{ResourceMemory},
+			expected: []vpa_model.ResourceName{vpa_model.ResourceMemory},
 		}, {
 			name:     "No ControlledResources specified - used default",
 			policy:   &vpa_types.ContainerResourcePolicy{},
-			expected: []ResourceName{ResourceCPU, ResourceMemory},
+			expected: []vpa_model.ResourceName{vpa_model.ResourceCPU, vpa_model.ResourceMemory},
 		}, {
 			name:     "Nil policy - use default",
 			policy:   nil,
-			expected: []ResourceName{ResourceCPU, ResourceMemory},
+			expected: []vpa_model.ResourceName{vpa_model.ResourceCPU, vpa_model.ResourceMemory},
 		},
 	}
 	for _, tc := range testCases {

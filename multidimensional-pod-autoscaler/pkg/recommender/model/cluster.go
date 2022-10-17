@@ -25,6 +25,7 @@ import (
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/klog/v2"
 )
@@ -41,7 +42,7 @@ const (
 // All input to the VPA Recommender algorithm lives in this structure.
 type ClusterState struct {
 	// Pods in the cluster.
-	Pods map[PodID]*PodState
+	Pods map[vpa_model.PodID]*PodState
 
 	// MPA objects in the cluster.
 	Mpas map[MpaID]*Mpa
@@ -88,7 +89,7 @@ type aggregateContainerStatesMap map[AggregateStateKey]*AggregateContainerState
 // PodState holds runtime information about a single Pod.
 type PodState struct {
 	// Unique id of the Pod.
-	ID PodID
+	ID vpa_model.PodID
 	// Set of labels attached to the Pod.
 	labelSetKey labelSetKey
 	// Containers that belong to the Pod, keyed by the container name.
@@ -100,7 +101,7 @@ type PodState struct {
 // NewClusterState returns a new ClusterState with no pods.
 func NewClusterState(gcInterval time.Duration) *ClusterState {
 	return &ClusterState{
-		Pods:                          make(map[PodID]*PodState),
+		Pods:                          make(map[vpa_model.PodID]*PodState),
 		Mpas:                          make(map[MpaID]*Mpa),
 		EmptyMPAs:                     make(map[MpaID]time.Time),
 		aggregateStateMap:             make(aggregateContainerStatesMap),
@@ -114,7 +115,7 @@ func NewClusterState(gcInterval time.Duration) *ClusterState {
 // ID of the container it belongs to.
 type ContainerUsageSampleWithKey struct {
 	ContainerUsageSample
-	Container ContainerID
+	Container vpa_model.ContainerID
 }
 
 // AddOrUpdatePod updates the state of the pod with a given PodID, if it is
@@ -122,7 +123,7 @@ type ContainerUsageSampleWithKey struct {
 // the Cluster object.
 // If the labels of the pod have changed, it updates the links between the containers
 // and the aggregations.
-func (cluster *ClusterState) AddOrUpdatePod(podID PodID, newLabels labels.Set, phase apiv1.PodPhase) {
+func (cluster *ClusterState) AddOrUpdatePod(podID vpa_model.PodID, newLabels labels.Set, phase apiv1.PodPhase) {
 	pod, podExists := cluster.Pods[podID]
 	if !podExists {
 		pod = newPod(podID)
@@ -138,7 +139,7 @@ func (cluster *ClusterState) AddOrUpdatePod(podID PodID, newLabels labels.Set, p
 		pod.labelSetKey = newlabelSetKey
 		// Set the links between the containers and aggregations based on the current pod labels.
 		for containerName, container := range pod.Containers {
-			containerID := ContainerID{PodID: podID, ContainerName: containerName}
+			containerID := vpa_model.ContainerID{PodID: podID, ContainerName: containerName}
 			container.aggregator = cluster.findOrCreateAggregateContainerState(containerID)
 		}
 
@@ -168,7 +169,7 @@ func (cluster *ClusterState) removePodFromItsMpa(pod *PodState) {
 
 // GetContainer returns the ContainerState object for a given ContainerID or
 // null if it's not present in the model.
-func (cluster *ClusterState) GetContainer(containerID ContainerID) *ContainerState {
+func (cluster *ClusterState) GetContainer(containerID vpa_model.ContainerID) *ContainerState {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if podExists {
 		container, containerExists := pod.Containers[containerID.ContainerName]
@@ -180,7 +181,7 @@ func (cluster *ClusterState) GetContainer(containerID ContainerID) *ContainerSta
 }
 
 // DeletePod removes an existing pod from the cluster.
-func (cluster *ClusterState) DeletePod(podID PodID) {
+func (cluster *ClusterState) DeletePod(podID vpa_model.PodID) {
 	pod, found := cluster.Pods[podID]
 	if found {
 		cluster.removePodFromItsMpa(pod)
@@ -192,7 +193,7 @@ func (cluster *ClusterState) DeletePod(podID PodID) {
 // adds it to the parent pod in the ClusterState object, if not yet present.
 // Requires the pod to be added to the ClusterState first. Otherwise an error is
 // returned.
-func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, request Resources) error {
+func (cluster *ClusterState) AddOrUpdateContainer(containerID vpa_model.ContainerID, request vpa_model.Resources) error {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
 		return NewKeyError(containerID.PodID)
@@ -226,7 +227,7 @@ func (cluster *ClusterState) AddSample(sample *ContainerUsageSampleWithKey) erro
 }
 
 // RecordOOM adds info regarding OOM event in the model as an artificial memory sample.
-func (cluster *ClusterState) RecordOOM(containerID ContainerID, timestamp time.Time, requestedMemory ResourceAmount) error {
+func (cluster *ClusterState) RecordOOM(containerID vpa_model.ContainerID, timestamp time.Time, requestedMemory vpa_model.ResourceAmount) error {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
 		return NewKeyError(containerID.PodID)
@@ -298,7 +299,7 @@ func (cluster *ClusterState) DeleteMpa(mpaID MpaID) error {
 	return nil
 }
 
-func newPod(id PodID) *PodState {
+func newPod(id vpa_model.PodID) *PodState {
 	return &PodState{
 		ID:         id,
 		Containers: make(map[string]*ContainerState),
@@ -326,7 +327,7 @@ func (cluster *ClusterState) MakeAggregateStateKey(pod *PodState, containerName 
 
 // aggregateStateKeyForContainerID returns the AggregateStateKey for the ContainerID.
 // The pod with the corresponding PodID must already be present in the ClusterState.
-func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID ContainerID) AggregateStateKey {
+func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID vpa_model.ContainerID) AggregateStateKey {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
 		panic(fmt.Sprintf("Pod not present in the ClusterState: %v", containerID.PodID))
@@ -337,7 +338,7 @@ func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID Contain
 // findOrCreateAggregateContainerState returns (possibly newly created) AggregateContainerState
 // that should be used to aggregate usage samples from container with a given ID.
 // The pod with the corresponding PodID must already be present in the ClusterState.
-func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID ContainerID) *AggregateContainerState {
+func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID vpa_model.ContainerID) *AggregateContainerState {
 	aggregateStateKey := cluster.aggregateStateKeyForContainerID(containerID)
 	aggregateContainerState, aggregateStateExists := cluster.aggregateStateMap[aggregateStateKey]
 	if !aggregateStateExists {
@@ -441,8 +442,8 @@ func (cluster *ClusterState) RecordRecommendation(mpa *Mpa, now time.Time) error
 
 // GetMatchingPods returns a list of currently active pods that match the
 // given MPA. Traverses through all pods in the cluster - use sparingly.
-func (cluster *ClusterState) GetMatchingPods(mpa *Mpa) []PodID {
-	matchingPods := []PodID{}
+func (cluster *ClusterState) GetMatchingPods(mpa *Mpa) []vpa_model.PodID {
+	matchingPods := []vpa_model.PodID{}
 	for podID, pod := range cluster.Pods {
 		if vpa_utils.PodLabelsMatchVPA(podID.Namespace, cluster.labelSetMap[pod.labelSetKey],
 			mpa.ID.Namespace, mpa.PodSelector) {

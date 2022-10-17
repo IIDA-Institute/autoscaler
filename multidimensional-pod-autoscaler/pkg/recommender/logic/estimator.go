@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 // TODO: Split the estimator to have a separate estimator object for CPU and memory.
@@ -29,13 +30,13 @@ import (
 // model.Resources, e.g. a prediction of resources needed by a group of
 // containers.
 type ResourceEstimator interface {
-	GetResourceEstimation(s *model.AggregateContainerState) model.Resources
+	GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources
 }
 
 // Implementation of ResourceEstimator that returns constant amount of
 // resources. This can be used as by a fake recommender for test purposes.
 type constEstimator struct {
-	resources model.Resources
+	resources vpa_model.Resources
 }
 
 // Simple implementation of the ResourceEstimator interface. It returns specific
@@ -51,7 +52,7 @@ type marginEstimator struct {
 }
 
 type minResourcesEstimator struct {
-	minResources  model.Resources
+	minResources  vpa_model.Resources
 	baseEstimator ResourceEstimator
 }
 
@@ -62,7 +63,7 @@ type confidenceMultiplier struct {
 }
 
 // NewConstEstimator returns a new constEstimator with given resources.
-func NewConstEstimator(resources model.Resources) ResourceEstimator {
+func NewConstEstimator(resources vpa_model.Resources) ResourceEstimator {
 	return &constEstimator{resources}
 }
 
@@ -79,7 +80,7 @@ func WithMargin(marginFraction float64, baseEstimator ResourceEstimator) Resourc
 
 // WithMinResources returns a given ResourceEstimator with minResources applied.
 // The returned resources are equal to the max(original resources, minResources)
-func WithMinResources(minResources model.Resources, baseEstimator ResourceEstimator) ResourceEstimator {
+func WithMinResources(minResources vpa_model.Resources, baseEstimator ResourceEstimator) ResourceEstimator {
 	return &minResourcesEstimator{minResources, baseEstimator}
 }
 
@@ -89,16 +90,16 @@ func WithConfidenceMultiplier(multiplier, exponent float64, baseEstimator Resour
 }
 
 // Returns a constant amount of resources.
-func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
+func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources {
 	return e.resources
 }
 
 // Returns specific percentiles of CPU and memory peaks distributions.
-func (e *percentileEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
-	return model.Resources{
-		model.ResourceCPU: model.CPUAmountFromCores(
+func (e *percentileEstimator) GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources {
+	return vpa_model.Resources{
+		vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(
 			s.AggregateCPUUsage.Percentile(e.cpuPercentile)),
-		model.ResourceMemory: model.MemoryAmountFromBytes(
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(
 			s.AggregateMemoryPeaks.Percentile(e.memoryPercentile)),
 	}
 }
@@ -126,30 +127,30 @@ func getConfidence(s *model.AggregateContainerState) float64 {
 //
 // This can be used to widen or narrow the gap between the lower and upper bound
 // estimators depending on how much input data is available to the estimators.
-func (e *confidenceMultiplier) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
+func (e *confidenceMultiplier) GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources {
 	confidence := getConfidence(s)
 	originalResources := e.baseEstimator.GetResourceEstimation(s)
-	scaledResources := make(model.Resources)
+	scaledResources := make(vpa_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		scaledResources[resource] = model.ScaleResource(
+		scaledResources[resource] = vpa_model.ScaleResource(
 			resourceAmount, math.Pow(1.+e.multiplier/confidence, e.exponent))
 	}
 	return scaledResources
 }
 
-func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
+func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources {
 	originalResources := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
+	newResources := make(vpa_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		margin := model.ScaleResource(resourceAmount, e.marginFraction)
+		margin := vpa_model.ScaleResource(resourceAmount, e.marginFraction)
 		newResources[resource] = originalResources[resource] + margin
 	}
 	return newResources
 }
 
-func (e *minResourcesEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
+func (e *minResourcesEstimator) GetResourceEstimation(s *model.AggregateContainerState) vpa_model.Resources {
 	originalResources := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
+	newResources := make(vpa_model.Resources)
 	for resource, resourceAmount := range originalResources {
 		if resourceAmount < e.minResources[resource] {
 			resourceAmount = e.minResources[resource]

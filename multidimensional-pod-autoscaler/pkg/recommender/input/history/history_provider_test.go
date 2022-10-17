@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 const (
@@ -205,18 +206,18 @@ func TestGetCPUSamples(t *testing.T) {
 		nil)
 	mockClient.On("QueryRange", mock.Anything, memoryQuery, mock.AnythingOfType("v1.Range")).Return().Return(prommodel.Matrix{}, nil)
 	mockClient.On("Query", mock.Anything, labelsQuery, mock.AnythingOfType("time.Time")).Return(prommodel.Matrix{}, nil)
-	podID := model.PodID{Namespace: "default", PodName: "pod"}
+	podID := vpa_model.PodID{Namespace: "default", PodName: "pod"}
 	podHistory := &PodHistory{
 		LastLabels: map[string]string{},
 		Samples: map[string][]model.ContainerUsageSample{"container": {{
 			MeasureStart: time.Unix(1, 0),
-			Usage:        model.CPUAmountFromCores(5.5),
-			Resource:     model.ResourceCPU,
+			Usage:        vpa_model.CPUAmountFromCores(5.5),
+			Resource:     vpa_model.ResourceCPU,
 		}}},
 	}
 	histories, err := historyProvider.GetClusterHistory()
 	assert.Nil(t, err)
-	assert.Equal(t, histories, map[model.PodID]*PodHistory{podID: podHistory})
+	assert.Equal(t, histories, map[vpa_model.PodID]*PodHistory{podID: podHistory})
 }
 
 func TestGetMemorySamples(t *testing.T) {
@@ -243,18 +244,18 @@ func TestGetMemorySamples(t *testing.T) {
 			},
 		}, nil)
 	mockClient.On("Query", mock.Anything, labelsQuery, mock.AnythingOfType("time.Time")).Return(prommodel.Matrix{}, nil)
-	podID := model.PodID{Namespace: "default", PodName: "pod"}
+	podID := vpa_model.PodID{Namespace: "default", PodName: "pod"}
 	podHistory := &PodHistory{
 		LastLabels: map[string]string{},
 		Samples: map[string][]model.ContainerUsageSample{"container": {{
 			MeasureStart: time.Unix(1, 0),
-			Usage:        model.MemoryAmountFromBytes(12345),
-			Resource:     model.ResourceMemory,
+			Usage:        vpa_model.MemoryAmountFromBytes(12345),
+			Resource:     vpa_model.ResourceMemory,
 		}}},
 	}
 	histories, err := historyProvider.GetClusterHistory()
 	assert.Nil(t, err)
-	assert.Equal(t, histories, map[model.PodID]*PodHistory{podID: podHistory})
+	assert.Equal(t, histories, map[vpa_model.PodID]*PodHistory{podID: podHistory})
 }
 
 func TestGetNamespacedMemorySamples(t *testing.T) {
@@ -284,18 +285,18 @@ func TestGetNamespacedMemorySamples(t *testing.T) {
 			},
 		}, nil)
 	mockClient.On("Query", mock.Anything, labelsQuery, mock.AnythingOfType("time.Time")).Return(prommodel.Matrix{}, nil)
-	podID := model.PodID{Namespace: "kube-system", PodName: "pod"}
+	podID := vpa_model.PodID{Namespace: "kube-system", PodName: "pod"}
 	podHistory := &PodHistory{
 		LastLabels: map[string]string{},
 		Samples: map[string][]model.ContainerUsageSample{"container": {{
 			MeasureStart: time.Unix(1, 0),
-			Usage:        model.MemoryAmountFromBytes(12345),
-			Resource:     model.ResourceMemory,
+			Usage:        vpa_model.MemoryAmountFromBytes(12345),
+			Resource:     vpa_model.ResourceMemory,
 		}}},
 	}
 	histories, err := historyProvider.GetClusterHistory()
 	assert.Nil(t, err)
-	assert.Equal(t, histories, map[model.PodID]*PodHistory{podID: podHistory})
+	assert.Equal(t, histories, map[vpa_model.PodID]*PodHistory{podID: podHistory})
 }
 
 func TestGetLabels(t *testing.T) {
@@ -335,7 +336,7 @@ func TestGetLabels(t *testing.T) {
 				},
 			},
 		}, nil)
-	podID := model.PodID{Namespace: "default", PodName: "pod"}
+	podID := vpa_model.PodID{Namespace: "default", PodName: "pod"}
 	podHistory := &PodHistory{
 		LastLabels: map[string]string{"x": "z"},
 		LastSeen:   time.Unix(20, 0),
@@ -343,5 +344,5 @@ func TestGetLabels(t *testing.T) {
 	}
 	histories, err := historyProvider.GetClusterHistory()
 	assert.Nil(t, err)
-	assert.Equal(t, histories, map[model.PodID]*PodHistory{podID: podHistory})
+	assert.Equal(t, histories, map[vpa_model.PodID]*PodHistory{podID: podHistory})
 }

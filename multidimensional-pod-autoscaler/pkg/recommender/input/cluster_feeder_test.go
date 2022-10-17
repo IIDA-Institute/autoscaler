@@ -34,6 +34,7 @@ import (
 	target_mock "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target/mock"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 type fakeControllerFetcher struct {
@@ -364,7 +365,7 @@ func makeTestSpecClient(podLabels []map[string]string) spec.SpecClient {
 	pods := make([]*spec.BasicPodSpec, len(podLabels))
 	for i, l := range podLabels {
 		pods[i] = &spec.BasicPodSpec{
-			ID:        model.PodID{Namespace: "default", PodName: fmt.Sprintf("pod-%d", i)},
+			ID:        vpa_model.PodID{Namespace: "default", PodName: fmt.Sprintf("pod-%d", i)},
 			PodLabels: l,
 		}
 	}
@@ -451,20 +452,20 @@ func TestClusterStateFeeder_LoadPods(t *testing.T) {
 }
 
 type fakeHistoryProvider struct {
-	history map[model.PodID]*history.PodHistory
+	history map[vpa_model.PodID]*history.PodHistory
 	err     error
 }
 
-func (fhp *fakeHistoryProvider) GetClusterHistory() (map[model.PodID]*history.PodHistory, error) {
+func (fhp *fakeHistoryProvider) GetClusterHistory() (map[vpa_model.PodID]*history.PodHistory, error) {
 	return fhp.history, fhp.err
 }
 
 func TestClusterStateFeeder_InitFromHistoryProvider(t *testing.T) {
-	pod1 := model.PodID{
+	pod1 := vpa_model.PodID{
 		Namespace: "ns",
 		PodName:   "a-pod",
 	}
-	memAmount := model.ResourceAmount(128 * 1024 * 1024)
+	memAmount := vpa_model.ResourceAmount(128 * 1024 * 1024)
 	t0 := time.Date(2021, time.August, 30, 10, 21, 0, 0, time.UTC)
 	containerCpu := "containerCpu"
 	containerMem := "containerMem"
@@ -477,7 +478,7 @@ func TestClusterStateFeeder_InitFromHistoryProvider(t *testing.T) {
 					MeasureStart: t0,
 					Usage:        10,
 					Request:      101,
-					Resource:     model.ResourceCPU,
+					Resource:     vpa_model.ResourceCPU,
 				},
 			},
 			containerMem: {
@@ -485,13 +486,13 @@ func TestClusterStateFeeder_InitFromHistoryProvider(t *testing.T) {
 					MeasureStart: t0,
 					Usage:        memAmount,
 					Request:      1024 * 1024 * 1024,
-					Resource:     model.ResourceMemory,
+					Resource:     vpa_model.ResourceMemory,
 				},
 			},
 		},
 	}
 	provider := fakeHistoryProvider{
-		history: map[model.PodID]*history.PodHistory{
+		history: map[vpa_model.PodID]*history.PodHistory{
 			pod1: &pod1History,
 		},
 	}

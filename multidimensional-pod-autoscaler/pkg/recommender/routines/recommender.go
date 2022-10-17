@@ -33,6 +33,7 @@ import (
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
@@ -162,10 +163,10 @@ func getCappedRecommendation(mpaID model.MpaID, resources logic.RecommendedPodRe
 	for _, name := range containerNames {
 		containerResources = append(containerResources, vpa_types.RecommendedContainerResources{
 			ContainerName:  name,
-			Target:         model.ResourcesAsResourceList(resources[name].Target),
-			LowerBound:     model.ResourcesAsResourceList(resources[name].LowerBound),
-			UpperBound:     model.ResourcesAsResourceList(resources[name].UpperBound),
-			UncappedTarget: model.ResourcesAsResourceList(resources[name].Target),
+			Target:         vpa_model.ResourcesAsResourceList(resources[name].Target),
+			LowerBound:     vpa_model.ResourcesAsResourceList(resources[name].LowerBound),
+			UpperBound:     vpa_model.ResourcesAsResourceList(resources[name].UpperBound),
+			UncappedTarget: vpa_model.ResourcesAsResourceList(resources[name].Target),
 		})
 	}
 	recommendation := &vpa_types.RecommendedPodResources{

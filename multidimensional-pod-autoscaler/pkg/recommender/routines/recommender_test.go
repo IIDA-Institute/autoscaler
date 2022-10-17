@@ -23,6 +23,7 @@ import (
 	labels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/logic"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -36,10 +37,10 @@ func TestSortedRecommendation(t *testing.T) {
 		{
 			name: "All recommendations sorted",
 			resources: logic.RecommendedPodResources{
-				"a-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"b-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"c-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"d-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
+				"a-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"b-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"c-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"d-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
 			},
 			expectedLast: []string{
 				"a-container",
@@ -51,10 +52,10 @@ func TestSortedRecommendation(t *testing.T) {
 		{
 			name: "All recommendations unsorted",
 			resources: logic.RecommendedPodResources{
-				"b-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"a-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"d-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
-				"c-container": logic.RecommendedContainerResources{Target: model.Resources{model.ResourceCPU: model.CPUAmountFromCores(1), model.ResourceMemory: model.MemoryAmountFromBytes(1000)}},
+				"b-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"a-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"d-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
+				"c-container": logic.RecommendedContainerResources{Target: vpa_model.Resources{vpa_model.ResourceCPU: vpa_model.CPUAmountFromCores(1), vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(1000)}},
 			},
 			expectedLast: []string{
 				"a-container",

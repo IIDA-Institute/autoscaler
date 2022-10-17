@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
@@ -28,9 +29,9 @@ var (
 	timeLayout       = "2006-01-02 15:04:05"
 	testTimestamp, _ = time.Parse(timeLayout, "2017-04-18 17:35:05")
 
-	TestRequest = Resources{
-		ResourceCPU:    CPUAmountFromCores(2.3),
-		ResourceMemory: MemoryAmountFromBytes(5e8),
+	TestRequest = vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(2.3),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(5e8),
 	}
 )
 
@@ -39,10 +40,10 @@ const (
 	mb = 1024 * kb
 )
 
-func newUsageSample(timestamp time.Time, usage int64, resource ResourceName) *ContainerUsageSample {
+func newUsageSample(timestamp time.Time, usage int64, resource vpa_model.ResourceName) *ContainerUsageSample {
 	return &ContainerUsageSample{
 		MeasureStart: timestamp,
-		Usage:        ResourceAmount(usage),
+		Usage:        vpa_model.ResourceAmount(usage),
 		Request:      TestRequest[resource],
 		Resource:     resource,
 	}
@@ -98,27 +99,27 @@ func TestAggregateContainerUsageSamples(t *testing.T) {
 
 	// Add three CPU and memory usage samples.
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp, 3140, ResourceCPU)))
+		testTimestamp, 3140, vpa_model.ResourceCPU)))
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp, 5, ResourceMemory)))
+		testTimestamp, 5, vpa_model.ResourceMemory)))
 
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp.Add(timeStep), 6280, ResourceCPU)))
+		testTimestamp.Add(timeStep), 6280, vpa_model.ResourceCPU)))
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp.Add(timeStep), 10, ResourceMemory)))
+		testTimestamp.Add(timeStep), 10, vpa_model.ResourceMemory)))
 
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp.Add(2*timeStep), 1570, ResourceCPU)))
+		testTimestamp.Add(2*timeStep), 1570, vpa_model.ResourceCPU)))
 	assert.True(t, c.AddSample(newUsageSample(
-		testTimestamp.Add(2*timeStep), 2, ResourceMemory)))
+		testTimestamp.Add(2*timeStep), 2, vpa_model.ResourceMemory)))
 
 	// Discard invalid samples.
 	assert.False(t, c.AddSample(newUsageSample( // Out of order sample.
-		testTimestamp.Add(2*timeStep), 1000, ResourceCPU)))
+		testTimestamp.Add(2*timeStep), 1000, vpa_model.ResourceCPU)))
 	assert.False(t, c.AddSample(newUsageSample( // Negative CPU usage.
-		testTimestamp.Add(4*timeStep), -1000, ResourceCPU)))
+		testTimestamp.Add(4*timeStep), -1000, vpa_model.ResourceCPU)))
 	assert.False(t, c.AddSample(newUsageSample( // Negative memory usage.
-		testTimestamp.Add(4*timeStep), -1000, ResourceMemory)))
+		testTimestamp.Add(4*timeStep), -1000, vpa_model.ResourceMemory)))
 }
 
 func TestRecordOOMIncreasedByBumpUp(t *testing.T) {
@@ -127,7 +128,7 @@ func TestRecordOOMIncreasedByBumpUp(t *testing.T) {
 	// Bump Up factor is 20%.
 	test.mockMemoryHistogram.On("AddSample", 1200.0*mb, 1.0, memoryAggregationWindowEnd)
 
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(1000*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(1000*mb)))
 }
 
 func TestRecordOOMDontRunAway(t *testing.T) {
@@ -136,16 +137,16 @@ func TestRecordOOMDontRunAway(t *testing.T) {
 
 	// Bump Up factor is 20%.
 	test.mockMemoryHistogram.On("AddSample", 1200.0*mb, 1.0, memoryAggregationWindowEnd)
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(1000*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(1000*mb)))
 
 	// new smaller OOMs don't influence the sample value (oomPeak)
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(999*mb)))
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(999*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(999*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(999*mb)))
 
 	test.mockMemoryHistogram.On("SubtractSample", 1200.0*mb, 1.0, memoryAggregationWindowEnd)
 	test.mockMemoryHistogram.On("AddSample", 2400.0*mb, 1.0, memoryAggregationWindowEnd)
 	// a larger OOM should increase the sample value
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(2000*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(2000*mb)))
 }
 
 func TestRecordOOMIncreasedByMin(t *testing.T) {
@@ -154,7 +155,7 @@ func TestRecordOOMIncreasedByMin(t *testing.T) {
 	// Min grow by 100Mb.
 	test.mockMemoryHistogram.On("AddSample", 101.0*mb, 1.0, memoryAggregationWindowEnd)
 
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(1*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(1*mb)))
 }
 
 func TestRecordOOMMaxedWithKnownSample(t *testing.T) {
@@ -162,13 +163,13 @@ func TestRecordOOMMaxedWithKnownSample(t *testing.T) {
 	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 3000.0*mb, 1.0, memoryAggregationWindowEnd)
-	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 3000*mb, ResourceMemory)))
+	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 3000*mb, vpa_model.ResourceMemory)))
 
 	// Last known sample is higher than request, so it is taken.
 	test.mockMemoryHistogram.On("SubtractSample", 3000.0*mb, 1.0, memoryAggregationWindowEnd)
 	test.mockMemoryHistogram.On("AddSample", 3600.0*mb, 1.0, memoryAggregationWindowEnd)
 
-	assert.NoError(t, test.container.RecordOOM(testTimestamp, ResourceAmount(1000*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp, vpa_model.ResourceAmount(1000*mb)))
 }
 
 func TestRecordOOMDiscardsOldSample(t *testing.T) {
@@ -176,10 +177,10 @@ func TestRecordOOMDiscardsOldSample(t *testing.T) {
 	memoryAggregationWindowEnd := testTimestamp.Add(GetAggregationsConfig().MemoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 1000.0*mb, 1.0, memoryAggregationWindowEnd)
-	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 1000*mb, ResourceMemory)))
+	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 1000*mb, vpa_model.ResourceMemory)))
 
 	// OOM is stale, mem not changed.
-	assert.Error(t, test.container.RecordOOM(testTimestamp.Add(-30*time.Hour), ResourceAmount(1000*mb)))
+	assert.Error(t, test.container.RecordOOM(testTimestamp.Add(-30*time.Hour), vpa_model.ResourceAmount(1000*mb)))
 }
 
 func TestRecordOOMInNewWindow(t *testing.T) {
@@ -188,9 +189,9 @@ func TestRecordOOMInNewWindow(t *testing.T) {
 	memoryAggregationWindowEnd := testTimestamp.Add(memoryAggregationInterval)
 
 	test.mockMemoryHistogram.On("AddSample", 2000.0*mb, 1.0, memoryAggregationWindowEnd)
-	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 2000*mb, ResourceMemory)))
+	assert.True(t, test.container.AddSample(newUsageSample(testTimestamp, 2000*mb, vpa_model.ResourceMemory)))
 
 	memoryAggregationWindowEnd = memoryAggregationWindowEnd.Add(2 * memoryAggregationInterval)
 	test.mockMemoryHistogram.On("AddSample", 2400.0*mb, 1.0, memoryAggregationWindowEnd)
-	assert.NoError(t, test.container.RecordOOM(testTimestamp.Add(2*memoryAggregationInterval), ResourceAmount(1000*mb)))
+	assert.NoError(t, test.container.RecordOOM(testTimestamp.Add(2*memoryAggregationInterval), vpa_model.ResourceAmount(1000*mb)))
 }

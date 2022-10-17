@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 var scheme = runtime.NewScheme()
@@ -107,7 +107,7 @@ func TestOOMReceived(t *testing.T) {
 	assert.Equal(t, "mockNamespace", container.PodID.Namespace)
 	assert.Equal(t, "Pod1", container.PodID.PodName)
 	assert.Equal(t, "Name11", container.ContainerName)
-	assert.Equal(t, model.ResourceAmount(int64(1024)), info.Memory)
+	assert.Equal(t, vpa_model.ResourceAmount(int64(1024)), info.Memory)
 	timestamp, err := time.Parse(time.RFC3339, "2018-02-23T13:38:48Z")
 	assert.NoError(t, err)
 	assert.Equal(t, timestamp.Unix(), info.Timestamp.Unix())
@@ -134,15 +134,15 @@ func TestParseEvictionEvent(t *testing.T) {
 		assert.NoError(t, err)
 		return timestamp.UTC()
 	}
-	parseResources := func(str string) model.ResourceAmount {
+	parseResources := func(str string) vpa_model.ResourceAmount {
 		memory, err := resource.ParseQuantity(str)
 		assert.NoError(t, err)
-		return model.ResourceAmount(memory.Value())
+		return vpa_model.ResourceAmount(memory.Value())
 	}
 
-	toContainerID := func(namespace, pod, container string) model.ContainerID {
-		return model.ContainerID{
-			PodID: model.PodID{
+	toContainerID := func(namespace, pod, container string) vpa_model.ContainerID {
+		return vpa_model.ContainerID{
+			PodID: vpa_model.PodID{
 				PodName:   pod,
 				Namespace: namespace,
 			},

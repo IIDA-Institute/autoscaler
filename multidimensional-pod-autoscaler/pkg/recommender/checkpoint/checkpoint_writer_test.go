@@ -25,17 +25,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
 )
 
 // TODO: Extract these constants to a common test module.
 var (
-	testPodID1 = model.PodID{
+	testPodID1 = vpa_model.PodID{
 		Namespace: "namespace-1",
 		PodName:   "pod-1",
 	}
-	testContainerID1 = model.ContainerID{
+	testContainerID1 = vpa_model.ContainerID{
 		PodID:         testPodID1,
 		ContainerName: "container-1",
 	}
@@ -45,9 +46,9 @@ var (
 	}
 	testLabels      = map[string]string{"label-1": "value-1"}
 	testSelectorStr = "label-1 = value-1"
-	testRequest     = model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
+	testRequest     = vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	}
 )
 
@@ -75,9 +76,9 @@ func TestMergeContainerStateForCheckpointDropsRecentMemoryPeak(t *testing.T) {
 	timeNow := time.Unix(1, 0)
 	container.AddSample(&model.ContainerUsageSample{
 		MeasureStart: timeNow,
-		Usage:        model.MemoryAmountFromBytes(1024 * 1024 * 1024),
-		Request:      testRequest[model.ResourceMemory],
-		Resource:     model.ResourceMemory,
+		Usage:        vpa_model.MemoryAmountFromBytes(1024 * 1024 * 1024),
+		Request:      testRequest[vpa_model.ResourceMemory],
+		Resource:     vpa_model.ResourceMemory,
 	})
 	mpa := addMpa(t, cluster, testMpaID1, testSelectorStr)
 

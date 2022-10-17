@@ -30,14 +30,15 @@ import (
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/klog/v2"
 )
 
 var (
-	testPodID       = PodID{"namespace-1", "pod-1"}
-	testPodID3      = PodID{"namespace-1", "pod-3"}
-	testPodID4      = PodID{"namespace-1", "pod-4"}
-	testContainerID = ContainerID{testPodID, "container-1"}
+	testPodID       = vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-1"}
+	testPodID3      = vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-3"}
+	testPodID4      = vpa_model.PodID{Namespace: "namespace-1", PodName: "pod-4"}
+	testContainerID = vpa_model.ContainerID{PodID: testPodID, ContainerName: "container-1"}
 	testMpaID       = MpaID{"namespace-1", "mpa-1"}
 	testAnnotations = mpaAnnotationsMap{"key-1": "value-1"}
 	testLabels      = map[string]string{"label-1": "value-1"}
@@ -77,8 +78,8 @@ func makeTestUsageSample() *ContainerUsageSampleWithKey {
 	return &ContainerUsageSampleWithKey{ContainerUsageSample{
 		MeasureStart: testTimestamp,
 		Usage:        1.0,
-		Request:      testRequest[ResourceCPU],
-		Resource:     ResourceCPU},
+		Request:      testRequest[vpa_model.ResourceCPU],
+		Resource:     vpa_model.ResourceCPU},
 		testContainerID}
 }
 
@@ -307,7 +308,7 @@ func TestClusterRecordOOM(t *testing.T) {
 	assert.NoError(t, cluster.AddOrUpdateContainer(testContainerID, testRequest))
 
 	// RecordOOM
-	assert.NoError(t, cluster.RecordOOM(testContainerID, time.Unix(0, 0), ResourceAmount(10)))
+	assert.NoError(t, cluster.RecordOOM(testContainerID, time.Unix(0, 0), vpa_model.ResourceAmount(10)))
 
 	// Verify that OOM was aggregated into the aggregated stats.
 	aggregation := cluster.findOrCreateAggregateContainerState(testContainerID)
@@ -321,7 +322,7 @@ func TestMissingKeys(t *testing.T) {
 	err := cluster.AddSample(makeTestUsageSample())
 	assert.EqualError(t, err, "KeyError: {namespace-1 pod-1}")
 
-	err = cluster.RecordOOM(testContainerID, time.Unix(0, 0), ResourceAmount(10))
+	err = cluster.RecordOOM(testContainerID, time.Unix(0, 0), vpa_model.ResourceAmount(10))
 	assert.EqualError(t, err, "KeyError: {namespace-1 pod-1}")
 
 	err = cluster.AddOrUpdateContainer(testContainerID, testRequest)
@@ -589,10 +590,10 @@ func TestEqualAggregateStateKey(t *testing.T) {
 // Verify that two containers with the same name, living in two pods with the same namespace and labels
 // (although different pod names) are aggregated together.
 func TestTwoPodsWithSameLabels(t *testing.T) {
-	podID1 := PodID{"namespace-1", "pod-1"}
-	podID2 := PodID{"namespace-1", "pod-2"}
-	containerID1 := ContainerID{podID1, "foo-container"}
-	containerID2 := ContainerID{podID2, "foo-container"}
+	podID1 := vpa_model.PodID{"namespace-1", "pod-1"}
+	podID2 := vpa_model.PodID{"namespace-1", "pod-2"}
+	containerID1 := vpa_model.ContainerID{podID1, "foo-container"}
+	containerID2 := vpa_model.ContainerID{podID2, "foo-container"}
 
 	cluster := NewClusterState(testGcPeriod)
 	cluster.AddOrUpdatePod(podID1, testLabels, apiv1.PodRunning)
@@ -608,10 +609,10 @@ func TestTwoPodsWithSameLabels(t *testing.T) {
 
 // Verify that two identical containers in different namespaces are not aggregated together.
 func TestTwoPodsWithDifferentNamespaces(t *testing.T) {
-	podID1 := PodID{"namespace-1", "foo-pod"}
-	podID2 := PodID{"namespace-2", "foo-pod"}
-	containerID1 := ContainerID{podID1, "foo-container"}
-	containerID2 := ContainerID{podID2, "foo-container"}
+	podID1 := vpa_model.PodID{"namespace-1", "foo-pod"}
+	podID2 := vpa_model.PodID{"namespace-2", "foo-pod"}
+	containerID1 := vpa_model.ContainerID{podID1, "foo-container"}
+	containerID2 := vpa_model.ContainerID{podID2, "foo-container"}
 
 	cluster := NewClusterState(testGcPeriod)
 	cluster.AddOrUpdatePod(podID1, testLabels, apiv1.PodRunning)
@@ -635,13 +636,13 @@ func TestEmptySelector(t *testing.T) {
 	mpa := addMpa(cluster, testMpaID, testAnnotations, "", testTargetRef)
 	// Create a pod with labels. Add a container.
 	cluster.AddOrUpdatePod(testPodID, testLabels, apiv1.PodRunning)
-	containerID1 := ContainerID{testPodID, "foo"}
+	containerID1 := vpa_model.ContainerID{testPodID, "foo"}
 	assert.NoError(t, cluster.AddOrUpdateContainer(containerID1, testRequest))
 
 	// Create a pod without labels. Add a container.
-	anotherPodID := PodID{"namespace-1", "pod-2"}
+	anotherPodID := vpa_model.PodID{"namespace-1", "pod-2"}
 	cluster.AddOrUpdatePod(anotherPodID, emptyLabels, apiv1.PodRunning)
-	containerID2 := ContainerID{anotherPodID, "foo"}
+	containerID2 := vpa_model.ContainerID{anotherPodID, "foo"}
 	assert.NoError(t, cluster.AddOrUpdateContainer(containerID2, testRequest))
 
 	// Both pods should be matched by the MPA.
@@ -724,7 +725,7 @@ func TestRecordRecommendation(t *testing.T) {
 }
 
 type podDesc struct {
-	id     PodID
+	id     vpa_model.PodID
 	labels labels.Set
 	phase  apiv1.PodPhase
 }
@@ -734,13 +735,13 @@ func TestGetActiveMatchingPods(t *testing.T) {
 		name         string
 		mpaSelector  string
 		pods         []podDesc
-		expectedPods []PodID
+		expectedPods []vpa_model.PodID
 	}{
 		{
 			name:         "No pods",
 			mpaSelector:  testSelectorStr,
 			pods:         []podDesc{},
-			expectedPods: []PodID{},
+			expectedPods: []vpa_model.PodID{},
 		}, {
 			name:        "Matching pod",
 			mpaSelector: testSelectorStr,
@@ -751,7 +752,7 @@ func TestGetActiveMatchingPods(t *testing.T) {
 					phase:  apiv1.PodRunning,
 				},
 			},
-			expectedPods: []PodID{testPodID},
+			expectedPods: []vpa_model.PodID{testPodID},
 		}, {
 			name:        "Matching pod is inactive",
 			mpaSelector: testSelectorStr,
@@ -762,7 +763,7 @@ func TestGetActiveMatchingPods(t *testing.T) {
 					phase:  apiv1.PodFailed,
 				},
 			},
-			expectedPods: []PodID{testPodID},
+			expectedPods: []vpa_model.PodID{testPodID},
 		}, {
 			name:        "No matching pods",
 			mpaSelector: testSelectorStr,
@@ -772,12 +773,12 @@ func TestGetActiveMatchingPods(t *testing.T) {
 					labels: emptyLabels,
 					phase:  apiv1.PodRunning,
 				}, {
-					id:     PodID{Namespace: "different-than-mpa", PodName: "pod-1"},
+					id:     vpa_model.PodID{Namespace: "different-than-mpa", PodName: "pod-1"},
 					labels: testLabels,
 					phase:  apiv1.PodRunning,
 				},
 			},
-			expectedPods: []PodID{},
+			expectedPods: []vpa_model.PodID{},
 		},
 	}
 
@@ -861,7 +862,7 @@ func TestMPAWithMatchingPods(t *testing.T) {
 			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)
 			for _, podDesc := range tc.pods {
 				cluster.AddOrUpdatePod(podDesc.id, podDesc.labels, podDesc.phase)
-				containerID := ContainerID{testPodID, "foo"}
+				containerID := vpa_model.ContainerID{testPodID, "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
 			assert.Equal(t, tc.expectedMatch, cluster.Mpas[mpa.ID].PodCount)
@@ -873,7 +874,7 @@ func TestMPAWithMatchingPods(t *testing.T) {
 			cluster := NewClusterState(testGcPeriod)
 			for _, podDesc := range tc.pods {
 				cluster.AddOrUpdatePod(podDesc.id, podDesc.labels, podDesc.phase)
-				containerID := ContainerID{testPodID, "foo"}
+				containerID := vpa_model.ContainerID{testPodID, "foo"}
 				assert.NoError(t, cluster.AddOrUpdateContainer(containerID, testRequest))
 			}
 			mpa := addMpa(cluster, testMpaID, testAnnotations, tc.mpaSelector, testTargetRef)

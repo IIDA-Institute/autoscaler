@@ -41,6 +41,7 @@ import (
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
@@ -244,7 +245,7 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 		klog.V(4).Infof("Adding pod %v with labels %v", podID, podHistory.LastLabels)
 		feeder.clusterState.AddOrUpdatePod(podID, podHistory.LastLabels, apiv1.PodUnknown)
 		for containerName, sampleList := range podHistory.Samples {
-			containerID := model.ContainerID{
+			containerID := vpa_model.ContainerID{
 				PodID:         podID,
 				ContainerName: containerName,
 			}
@@ -433,7 +434,7 @@ func (feeder *clusterStateFeeder) LoadPods() {
 	if err != nil {
 		klog.Errorf("Cannot get SimplePodSpecs. Reason: %+v", err)
 	}
-	pods := make(map[model.PodID]*spec.BasicPodSpec)
+	pods := make(map[vpa_model.PodID]*spec.BasicPodSpec)
 	for _, spec := range podSpecs {
 		pods[spec.ID] = spec
 	}

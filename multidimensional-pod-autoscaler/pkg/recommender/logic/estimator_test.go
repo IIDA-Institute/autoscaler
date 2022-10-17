@@ -22,14 +22,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
 var (
 	anyTime     = time.Unix(0, 0)
-	testRequest = model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
+	testRequest = vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	}
 )
 
@@ -58,8 +59,8 @@ func TestPercentileEstimator(t *testing.T) {
 			AggregateMemoryPeaks: memoryPeaksHistogram,
 		})
 	maxRelativeError := 0.05 // Allow 5% relative error to account for histogram rounding.
-	assert.InEpsilon(t, 1.0, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]), maxRelativeError)
-	assert.InEpsilon(t, 2e9, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]), maxRelativeError)
+	assert.InEpsilon(t, 1.0, vpa_model.CoresFromCPUAmount(resourceEstimation[vpa_model.ResourceCPU]), maxRelativeError)
+	assert.InEpsilon(t, 2e9, vpa_model.BytesFromMemoryAmount(resourceEstimation[vpa_model.ResourceMemory]), maxRelativeError)
 }
 
 // Verifies that the confidenceMultiplier calculates the internal
@@ -67,9 +68,9 @@ func TestPercentileEstimator(t *testing.T) {
 // returned by the base estimator according to the formula, using the calculated
 // confidence.
 func TestConfidenceMultiplier(t *testing.T) {
-	baseEstimator := NewConstEstimator(model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
+	baseEstimator := NewConstEstimator(vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	})
 	testedEstimator := &confidenceMultiplier{
 		multiplier:    0.1,
@@ -83,9 +84,9 @@ func TestConfidenceMultiplier(t *testing.T) {
 	for i := 1; i <= 9; i++ {
 		s.AddSample(&model.ContainerUsageSample{
 			MeasureStart: timestamp,
-			Usage:        model.CPUAmountFromCores(1.0),
-			Request:      testRequest[model.ResourceCPU],
-			Resource:     model.ResourceCPU,
+			Usage:        vpa_model.CPUAmountFromCores(1.0),
+			Request:      testRequest[vpa_model.ResourceCPU],
+			Resource:     vpa_model.ResourceCPU,
 		})
 		timestamp = timestamp.Add(time.Minute * 2)
 	}
@@ -95,26 +96,26 @@ func TestConfidenceMultiplier(t *testing.T) {
 	// Expected CPU estimation = 3.14 * (1 + 1/confidence)^exponent =
 	// 3.14 * (1 + 0.1/0.00625)^2 = 907.46.
 	resourceEstimation := testedEstimator.GetResourceEstimation(s)
-	assert.Equal(t, 907.46, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
+	assert.Equal(t, 907.46, vpa_model.CoresFromCPUAmount(resourceEstimation[vpa_model.ResourceCPU]))
 }
 
 // Verifies that the confidenceMultiplier works for the case of no
 // history. This corresponds to the multiplier of +INF or 0 (depending on the
 // sign of the exponent).
 func TestConfidenceMultiplierNoHistory(t *testing.T) {
-	baseEstimator := NewConstEstimator(model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
+	baseEstimator := NewConstEstimator(vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	})
 	testedEstimator1 := &confidenceMultiplier{1.0, 1.0, baseEstimator}
 	testedEstimator2 := &confidenceMultiplier{1.0, -1.0, baseEstimator}
 	s := model.NewAggregateContainerState()
 	// Expect testedEstimator1 to return the maximum possible resource amount.
-	assert.Equal(t, model.ResourceAmount(1e14),
-		testedEstimator1.GetResourceEstimation(s)[model.ResourceCPU])
+	assert.Equal(t, vpa_model.ResourceAmount(1e14),
+		testedEstimator1.GetResourceEstimation(s)[vpa_model.ResourceCPU])
 	// Expect testedEstimator2 to return zero.
-	assert.Equal(t, model.ResourceAmount(0),
-		testedEstimator2.GetResourceEstimation(s)[model.ResourceCPU])
+	assert.Equal(t, vpa_model.ResourceAmount(0),
+		testedEstimator2.GetResourceEstimation(s)[vpa_model.ResourceCPU])
 }
 
 // Verifies that the MarginEstimator adds margin to the originally
@@ -122,9 +123,9 @@ func TestConfidenceMultiplierNoHistory(t *testing.T) {
 func TestMarginEstimator(t *testing.T) {
 	// Use 10% margin on top of the recommended resources.
 	marginFraction := 0.1
-	baseEstimator := NewConstEstimator(model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
+	baseEstimator := NewConstEstimator(vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(3.14e9),
 	})
 	testedEstimator := &marginEstimator{
 		marginFraction: marginFraction,
@@ -132,20 +133,20 @@ func TestMarginEstimator(t *testing.T) {
 	}
 	s := model.NewAggregateContainerState()
 	resourceEstimation := testedEstimator.GetResourceEstimation(s)
-	assert.Equal(t, 3.14*1.1, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
-	assert.Equal(t, 3.14e9*1.1, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
+	assert.Equal(t, 3.14*1.1, vpa_model.CoresFromCPUAmount(resourceEstimation[vpa_model.ResourceCPU]))
+	assert.Equal(t, 3.14e9*1.1, vpa_model.BytesFromMemoryAmount(resourceEstimation[vpa_model.ResourceMemory]))
 }
 
 // Verifies that the MinResourcesEstimator returns at least MinResources.
 func TestMinResourcesEstimator(t *testing.T) {
 
-	minResources := model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(0.2),
-		model.ResourceMemory: model.MemoryAmountFromBytes(4e8),
+	minResources := vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(0.2),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(4e8),
 	}
-	baseEstimator := NewConstEstimator(model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
-		model.ResourceMemory: model.MemoryAmountFromBytes(2e7),
+	baseEstimator := NewConstEstimator(vpa_model.Resources{
+		vpa_model.ResourceCPU:    vpa_model.CPUAmountFromCores(3.14),
+		vpa_model.ResourceMemory: vpa_model.MemoryAmountFromBytes(2e7),
 	})
 
 	testedEstimator := &minResourcesEstimator{
@@ -155,7 +156,7 @@ func TestMinResourcesEstimator(t *testing.T) {
 	s := model.NewAggregateContainerState()
 	resourceEstimation := testedEstimator.GetResourceEstimation(s)
 	// Original CPU is above min resources
-	assert.Equal(t, 3.14, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
+	assert.Equal(t, 3.14, vpa_model.CoresFromCPUAmount(resourceEstimation[vpa_model.ResourceCPU]))
 	// Original Memory is below min resources
-	assert.Equal(t, 4e8, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
+	assert.Equal(t, 4e8, vpa_model.BytesFromMemoryAmount(resourceEstimation[vpa_model.ResourceMemory]))
 }

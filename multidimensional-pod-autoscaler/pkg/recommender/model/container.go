@@ -21,6 +21,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	"k8s.io/klog/v2"
 )
@@ -38,11 +39,11 @@ type ContainerUsageSample struct {
 	// Start of the measurement interval.
 	MeasureStart time.Time
 	// Average CPU usage in cores or memory usage in bytes.
-	Usage ResourceAmount
+	Usage vpa_model.ResourceAmount
 	// CPU or memory request at the time of measurment.
-	Request ResourceAmount
+	Request vpa_model.ResourceAmount
 	// Which resource is this sample for.
-	Resource ResourceName
+	Resource vpa_model.ResourceName
 }
 
 // ContainerState stores information about a single container instance.
@@ -53,13 +54,13 @@ type ContainerUsageSample struct {
 //	Note: samples are added to intervals based on their start timestamps.
 type ContainerState struct {
 	// Current request.
-	Request Resources
+	Request vpa_model.Resources
 	// Start of the latest CPU usage sample that was aggregated.
 	LastCPUSampleStart time.Time
 	// Max memory usage observed in the current aggregation interval.
-	memoryPeak ResourceAmount
+	memoryPeak vpa_model.ResourceAmount
 	// Max memory usage estimated from an OOM event in the current aggregation interval.
-	oomPeak ResourceAmount
+	oomPeak vpa_model.ResourceAmount
 	// End time of the current memory aggregation interval (not inclusive).
 	WindowEnd time.Time
 	// Start of the latest memory usage sample that was aggregated.
@@ -69,7 +70,7 @@ type ContainerState struct {
 }
 
 // NewContainerState returns a new ContainerState.
-func NewContainerState(request Resources, aggregator ContainerStateAggregator) *ContainerState {
+func NewContainerState(request vpa_model.Resources, aggregator ContainerStateAggregator) *ContainerState {
 	return &ContainerState{
 		Request:               request,
 		LastCPUSampleStart:    time.Time{},
@@ -79,13 +80,13 @@ func NewContainerState(request Resources, aggregator ContainerStateAggregator) *
 	}
 }
 
-func (sample *ContainerUsageSample) isValid(expectedResource ResourceName) bool {
+func (sample *ContainerUsageSample) isValid(expectedResource vpa_model.ResourceName) bool {
 	return sample.Usage >= 0 && sample.Resource == expectedResource
 }
 
 func (container *ContainerState) addCPUSample(sample *ContainerUsageSample) bool {
 	// Order should not matter for the histogram, other than deduplication.
-	if !sample.isValid(ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
+	if !sample.isValid(vpa_model.ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
 		return false // Discard invalid, duplicate or out-of-order samples.
 	}
 	container.observeQualityMetrics(sample.Usage, false, corev1.ResourceCPU)
@@ -94,7 +95,7 @@ func (container *ContainerState) addCPUSample(sample *ContainerUsageSample) bool
 	return true
 }
 
-func (container *ContainerState) observeQualityMetrics(usage ResourceAmount, isOOM bool, resource corev1.ResourceName) {
+func (container *ContainerState) observeQualityMetrics(usage vpa_model.ResourceAmount, isOOM bool, resource corev1.ResourceName) {
 	if !container.aggregator.NeedsRecommendation() {
 		return
 	}
@@ -102,9 +103,9 @@ func (container *ContainerState) observeQualityMetrics(usage ResourceAmount, isO
 	var usageValue float64
 	switch resource {
 	case corev1.ResourceCPU:
-		usageValue = CoresFromCPUAmount(usage)
+		usageValue = vpa_model.CoresFromCPUAmount(usage)
 	case corev1.ResourceMemory:
-		usageValue = BytesFromMemoryAmount(usage)
+		usageValue = vpa_model.BytesFromMemoryAmount(usage)
 	}
 	if container.aggregator.GetLastRecommendation() == nil {
 		metrics_quality.ObserveQualityMetricsRecommendationMissing(usageValue, isOOM, resource, updateMode)
@@ -129,14 +130,14 @@ func (container *ContainerState) observeQualityMetrics(usage ResourceAmount, isO
 }
 
 // GetMaxMemoryPeak returns maximum memory usage in the sample, possibly estimated from OOM
-func (container *ContainerState) GetMaxMemoryPeak() ResourceAmount {
-	return ResourceAmountMax(container.memoryPeak, container.oomPeak)
+func (container *ContainerState) GetMaxMemoryPeak() vpa_model.ResourceAmount {
+	return vpa_model.ResourceAmountMax(container.memoryPeak, container.oomPeak)
 }
 
 func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, isOOM bool) bool {
 	ts := sample.MeasureStart
 	// We always process OOM samples.
-	if !sample.isValid(ResourceMemory) ||
+	if !sample.isValid(vpa_model.ResourceMemory) ||
 		(!isOOM && ts.Before(container.lastMemorySampleStart)) {
 		return false // Discard invalid or outdated samples.
 	}
@@ -158,7 +159,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 				MeasureStart: container.WindowEnd,
 				Usage:        oldMaxMem,
 				Request:      sample.Request,
-				Resource:     ResourceMemory,
+				Resource:     vpa_model.ResourceMemory,
 			}
 			container.aggregator.SubtractSample(&oldPeak)
 			addNewPeak = true
@@ -178,7 +179,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 			MeasureStart: container.WindowEnd,
 			Usage:        sample.Usage,
 			Request:      sample.Request,
-			Resource:     ResourceMemory,
+			Resource:     vpa_model.ResourceMemory,
 		}
 		container.aggregator.AddSample(&newPeak)
 		if isOOM {
@@ -191,21 +192,21 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 }
 
 // RecordOOM adds info regarding OOM event in the model as an artificial memory sample.
-func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory ResourceAmount) error {
+func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory vpa_model.ResourceAmount) error {
 	// Discard old OOM
 	if timestamp.Before(container.WindowEnd.Add(-1 * GetAggregationsConfig().MemoryAggregationInterval)) {
 		return fmt.Errorf("OOM event will be discarded - it is too old (%v)", timestamp)
 	}
 	// Get max of the request and the recent usage-based memory peak.
 	// Omitting oomPeak here to protect against recommendation running too high on subsequent OOMs.
-	memoryUsed := ResourceAmountMax(requestedMemory, container.memoryPeak)
-	memoryNeeded := ResourceAmountMax(memoryUsed+MemoryAmountFromBytes(OOMMinBumpUp),
-		ScaleResource(memoryUsed, OOMBumpUpRatio))
+	memoryUsed := vpa_model.ResourceAmountMax(requestedMemory, container.memoryPeak)
+	memoryNeeded := vpa_model.ResourceAmountMax(memoryUsed+vpa_model.MemoryAmountFromBytes(OOMMinBumpUp),
+	vpa_model.ScaleResource(memoryUsed, OOMBumpUpRatio))
 
 	oomMemorySample := ContainerUsageSample{
 		MeasureStart: timestamp,
 		Usage:        memoryNeeded,
-		Resource:     ResourceMemory,
+		Resource:     vpa_model.ResourceMemory,
 	}
 	if !container.addMemorySample(&oomMemorySample, true) {
 		return fmt.Errorf("adding OOM sample failed")
@@ -222,9 +223,9 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 // implicitly assumed to be disjoint when aggregating.
 func (container *ContainerState) AddSample(sample *ContainerUsageSample) bool {
 	switch sample.Resource {
-	case ResourceCPU:
+	case vpa_model.ResourceCPU:
 		return container.addCPUSample(sample)
-	case ResourceMemory:
+	case vpa_model.ResourceMemory:
 		return container.addMemorySample(sample, false)
 	default:
 		return false
