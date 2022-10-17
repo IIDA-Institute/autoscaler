@@ -148,7 +148,7 @@ func TestAggregateContainerStateSaveToCheckpoint(t *testing.T) {
 	assert.Equal(t, t2, checkpoint.LastSampleStart.Time)
 	assert.Equal(t, 10, checkpoint.TotalSamplesCount)
 
-	assert.Equal(t, SupportedCheckpointVersion, checkpoint.Version)
+	assert.Equal(t, vpa_model.SupportedCheckpointVersion, checkpoint.Version)
 
 	// Basic check that serialization of histograms happened.
 	// Full tests are part of the Histogram.
@@ -170,7 +170,7 @@ func TestAggregateContainerStateLoadFromCheckpoint(t *testing.T) {
 	t1, t2 := time.Date(2018, time.January, 1, 2, 3, 4, 0, location), time.Date(2018, time.February, 1, 2, 3, 4, 0, location)
 
 	checkpoint := vpa_types.VerticalPodAutoscalerCheckpointStatus{
-		Version:           SupportedCheckpointVersion,
+		Version:           vpa_model.SupportedCheckpointVersion,
 		LastUpdateTime:    metav1.NewTime(time.Now()),
 		FirstSampleStart:  metav1.NewTime(t1),
 		LastSampleStart:   metav1.NewTime(t2),

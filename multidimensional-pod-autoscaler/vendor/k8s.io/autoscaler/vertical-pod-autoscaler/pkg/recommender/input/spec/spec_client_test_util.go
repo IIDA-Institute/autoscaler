@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	v1lister "k8s.io/client-go/listers/core/v1"
 )
 
@@ -107,8 +107,8 @@ func newEmptySpecClientTestCase() *specClientTestCase {
 }
 
 func newSpecClientTestCase() *specClientTestCase {
-	podID1 := vpa_model.PodID{Namespace: "", PodName: "Pod1"}
-	podID2 := vpa_model.PodID{Namespace: "", PodName: "Pod2"}
+	podID1 := model.PodID{Namespace: "", PodName: "Pod1"}
+	podID2 := model.PodID{Namespace: "", PodName: "Pod2"}
 
 	containerSpec11 := newTestContainerSpec(podID1, "Name11", 500, 512*1024*1024)
 	containerSpec12 := newTestContainerSpec(podID1, "Name12", 1000, 1024*1024*1024)
@@ -124,14 +124,14 @@ func newSpecClientTestCase() *specClientTestCase {
 	}
 }
 
-func newTestContainerSpec(podID vpa_model.PodID, containerName string, milicores int, memory int64) BasicContainerSpec {
-	containerID := vpa_model.ContainerID{
+func newTestContainerSpec(podID model.PodID, containerName string, milicores int, memory int64) BasicContainerSpec {
+	containerID := model.ContainerID{
 		PodID:         podID,
 		ContainerName: containerName,
 	}
-	requestedResources := vpa_model.Resources{
-		vpa_model.ResourceCPU:    vpa_model.ResourceAmount(milicores),
-		vpa_model.ResourceMemory: vpa_model.ResourceAmount(memory),
+	requestedResources := model.Resources{
+		model.ResourceCPU:    model.ResourceAmount(milicores),
+		model.ResourceMemory: model.ResourceAmount(memory),
 	}
 	return BasicContainerSpec{
 		ID:      containerID,
@@ -140,7 +140,7 @@ func newTestContainerSpec(podID vpa_model.PodID, containerName string, milicores
 	}
 }
 
-func newTestPodSpec(podId vpa_model.PodID, containerSpecs ...BasicContainerSpec) *BasicPodSpec {
+func newTestPodSpec(podId model.PodID, containerSpecs ...BasicContainerSpec) *BasicPodSpec {
 	return &BasicPodSpec{
 		ID:         podId,
 		PodLabels:  map[string]string{podId.PodName + "LabelKey": podId.PodName + "LabelValue"},

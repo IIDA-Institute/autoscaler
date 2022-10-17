@@ -22,7 +22,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/klog/v2"
@@ -31,8 +31,8 @@ import (
 // OomInfo contains data of the OOM event occurrence
 type OomInfo struct {
 	Timestamp   time.Time
-	Memory      vpa_model.ResourceAmount
-	ContainerID vpa_model.ContainerID
+	Memory      model.ResourceAmount
+	ContainerID model.ContainerID
 }
 
 // Observer can observe pod resource update and collect OOM events.
@@ -91,9 +91,9 @@ func parseEvictionEvent(event *apiv1.Event) []OomInfo {
 		}
 		oomInfo := OomInfo{
 			Timestamp: event.CreationTimestamp.Time.UTC(),
-			Memory:    vpa_model.ResourceAmount(memory.Value()),
-			ContainerID: vpa_model.ContainerID{
-				PodID: vpa_model.PodID{
+			Memory:    model.ResourceAmount(memory.Value()),
+			ContainerID: model.ContainerID{
+				PodID: model.PodID{
 					Namespace: event.InvolvedObject.Namespace,
 					PodName:   event.InvolvedObject.Name,
 				},
@@ -158,9 +158,9 @@ func (o *observer) OnUpdate(oldObj, newObj interface{}) {
 					memory := oldSpec.Resources.Requests[apiv1.ResourceMemory]
 					oomInfo := OomInfo{
 						Timestamp: containerStatus.LastTerminationState.Terminated.FinishedAt.Time.UTC(),
-						Memory:    vpa_model.ResourceAmount(memory.Value()),
-						ContainerID: vpa_model.ContainerID{
-							PodID: vpa_model.PodID{
+						Memory:    model.ResourceAmount(memory.Value()),
+						ContainerID: model.ContainerID{
+							PodID: model.PodID{
 								Namespace: newPod.ObjectMeta.Namespace,
 								PodName:   newPod.ObjectMeta.Name,
 							},

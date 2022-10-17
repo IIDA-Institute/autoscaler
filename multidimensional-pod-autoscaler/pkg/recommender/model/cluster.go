@@ -196,7 +196,7 @@ func (cluster *ClusterState) DeletePod(podID vpa_model.PodID) {
 func (cluster *ClusterState) AddOrUpdateContainer(containerID vpa_model.ContainerID, request vpa_model.Resources) error {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
-		return NewKeyError(containerID.PodID)
+		return vpa_model.NewKeyError(containerID.PodID)
 	}
 	if container, containerExists := pod.Containers[containerID.ContainerName]; !containerExists {
 		cluster.findOrCreateAggregateContainerState(containerID)
@@ -214,11 +214,11 @@ func (cluster *ClusterState) AddOrUpdateContainer(containerID vpa_model.Containe
 func (cluster *ClusterState) AddSample(sample *ContainerUsageSampleWithKey) error {
 	pod, podExists := cluster.Pods[sample.Container.PodID]
 	if !podExists {
-		return NewKeyError(sample.Container.PodID)
+		return vpa_model.NewKeyError(sample.Container.PodID)
 	}
 	containerState, containerExists := pod.Containers[sample.Container.ContainerName]
 	if !containerExists {
-		return NewKeyError(sample.Container)
+		return vpa_model.NewKeyError(sample.Container)
 	}
 	if !containerState.AddSample(&sample.ContainerUsageSample) {
 		return fmt.Errorf("sample discarded (invalid or out of order)")
@@ -230,11 +230,11 @@ func (cluster *ClusterState) AddSample(sample *ContainerUsageSampleWithKey) erro
 func (cluster *ClusterState) RecordOOM(containerID vpa_model.ContainerID, timestamp time.Time, requestedMemory vpa_model.ResourceAmount) error {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
-		return NewKeyError(containerID.PodID)
+		return vpa_model.NewKeyError(containerID.PodID)
 	}
 	containerState, containerExists := pod.Containers[containerID.ContainerName]
 	if !containerExists {
-		return NewKeyError(containerID.ContainerName)
+		return vpa_model.NewKeyError(containerID.ContainerName)
 	}
 	err := containerState.RecordOOM(timestamp, requestedMemory)
 	if err != nil {
@@ -289,7 +289,7 @@ func (cluster *ClusterState) AddOrUpdateMpa(apiObject *mpa_types.MultidimPodAuto
 func (cluster *ClusterState) DeleteMpa(mpaID MpaID) error {
 	mpa, mpaExists := cluster.Mpas[mpaID]
 	if !mpaExists {
-		return NewKeyError(mpaID)
+		return vpa_model.NewKeyError(mpaID)
 	}
 	for _, state := range mpa.aggregateContainerStates {
 		state.MarkNotAutoscaled()

@@ -21,8 +21,8 @@ import (
 	"time"
 
 	labels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/logic"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"

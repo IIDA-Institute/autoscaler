@@ -19,14 +19,15 @@ package routines
 import (
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	api_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 )
 
 // GetContainerNameToAggregateStateMap returns ContainerNameToAggregateStateMap for pods.
 // Updated to integrate with the MPA API.
-func GetContainerNameToAggregateStateMap(mpa *model.Mpa) model.ContainerNameToAggregateStateMap {
+func GetContainerNameToAggregateStateMap(mpa *model.Mpa) vpa_model.ContainerNameToAggregateStateMap {
 	containerNameToAggregateStateMap := mpa.AggregateStateByContainerName()
-	filteredContainerNameToAggregateStateMap := make(model.ContainerNameToAggregateStateMap)
+	filteredContainerNameToAggregateStateMap := make(vpa_model.ContainerNameToAggregateStateMap)
 
 	for containerName, aggregatedContainerState := range containerNameToAggregateStateMap {
 		containerResourcePolicy := api_utils.GetContainerResourcePolicy(containerName, mpa.ResourcePolicy)
@@ -34,7 +35,20 @@ func GetContainerNameToAggregateStateMap(mpa *model.Mpa) model.ContainerNameToAg
 			*containerResourcePolicy.Mode == vpa_types.ContainerScalingModeOff
 		if !autoscalingDisabled && aggregatedContainerState.TotalSamplesCount > 0 {
 			aggregatedContainerState.UpdateFromPolicy(containerResourcePolicy)
-			filteredContainerNameToAggregateStateMap[containerName] = aggregatedContainerState
+			vpaAggregatedContainerState := vpa_model.AggregateContainerState{
+                AggregateCPUUsage: aggregatedContainerState.AggregateCPUUsage,
+                AggregateMemoryPeaks: aggregatedContainerState.AggregateMemoryPeaks,
+                FirstSampleStart: aggregatedContainerState.FirstSampleStart,
+                LastSampleStart: aggregatedContainerState.LastSampleStart,
+                TotalSamplesCount: aggregatedContainerState.TotalSamplesCount,
+                CreationTime: aggregatedContainerState.CreationTime,
+                LastRecommendation: aggregatedContainerState.LastRecommendation,
+                IsUnderVPA: aggregatedContainerState.IsUnderVPA,
+                UpdateMode: aggregatedContainerState.UpdateMode,
+                ScalingMode: aggregatedContainerState.ScalingMode,
+                ControlledResources: aggregatedContainerState.ControlledResources,
+        }
+			filteredContainerNameToAggregateStateMap[containerName] = &vpaAggregatedContainerState
 		}
 	}
 	return filteredContainerNameToAggregateStateMap

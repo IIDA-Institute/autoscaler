@@ -29,8 +29,7 @@ import (
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	prommodel "github.com/prometheus/common/model"
 
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 // PrometheusHistoryProviderConfig allow to select which metrics
@@ -64,7 +63,7 @@ func newEmptyHistory() *PodHistory {
 // TODO(schylek): this interface imposes how history is represented which doesn't work well with checkpoints.
 // Consider refactoring to passing ClusterState and create history provider working with checkpoints.
 type HistoryProvider interface {
-	GetClusterHistory() (map[vpa_model.PodID]*PodHistory, error)
+	GetClusterHistory() (map[model.PodID]*PodHistory, error)
 }
 
 type prometheusHistoryProvider struct {
@@ -104,7 +103,7 @@ func NewPrometheusHistoryProvider(config PrometheusHistoryProviderConfig) (Histo
 	}, nil
 }
 
-func (p *prometheusHistoryProvider) getContainerIDFromLabels(metric prommodel.Metric) (*vpa_model.ContainerID, error) {
+func (p *prometheusHistoryProvider) getContainerIDFromLabels(metric prommodel.Metric) (*model.ContainerID, error) {
 	labels := promMetricToLabelMap(metric)
 	namespace, ok := labels[p.config.CtrNamespaceLabel]
 	if !ok {
@@ -118,8 +117,8 @@ func (p *prometheusHistoryProvider) getContainerIDFromLabels(metric prommodel.Me
 	if !ok {
 		return nil, fmt.Errorf("no %s label on container data", p.config.CtrNameLabel)
 	}
-	return &vpa_model.ContainerID{
-		PodID: vpa_model.PodID{
+	return &model.ContainerID{
+		PodID: model.PodID{
 			Namespace: namespace,
 			PodName:   podName,
 		},
@@ -127,7 +126,7 @@ func (p *prometheusHistoryProvider) getContainerIDFromLabels(metric prommodel.Me
 	}, nil
 }
 
-func (p *prometheusHistoryProvider) getPodIDFromLabels(metric prommodel.Metric) (*vpa_model.PodID, error) {
+func (p *prometheusHistoryProvider) getPodIDFromLabels(metric prommodel.Metric) (*model.PodID, error) {
 	labels := promMetricToLabelMap(metric)
 	namespace, ok := labels[p.config.PodNamespaceLabel]
 	if !ok {
@@ -137,7 +136,7 @@ func (p *prometheusHistoryProvider) getPodIDFromLabels(metric prommodel.Metric) 
 	if !ok {
 		return nil, fmt.Errorf("no %s label", p.config.PodNameLabel)
 	}
-	return &vpa_model.PodID{Namespace: namespace, PodName: podName}, nil
+	return &model.PodID{Namespace: namespace, PodName: podName}, nil
 }
 
 func (p *prometheusHistoryProvider) getPodLabelsMap(metric prommodel.Metric) map[string]string {
@@ -159,19 +158,19 @@ func promMetricToLabelMap(metric prommodel.Metric) map[string]string {
 	return labels
 }
 
-func resourceAmountFromValue(value float64, resource vpa_model.ResourceName) vpa_model.ResourceAmount {
+func resourceAmountFromValue(value float64, resource model.ResourceName) model.ResourceAmount {
 	// This assumes CPU value is in cores and memory in bytes, which is true
 	// for the metrics this class queries from Prometheus.
 	switch resource {
-	case vpa_model.ResourceCPU:
-		return vpa_model.CPUAmountFromCores(value)
-	case vpa_model.ResourceMemory:
-		return vpa_model.MemoryAmountFromBytes(value)
+	case model.ResourceCPU:
+		return model.CPUAmountFromCores(value)
+	case model.ResourceMemory:
+		return model.MemoryAmountFromBytes(value)
 	}
-	return vpa_model.ResourceAmount(0)
+	return model.ResourceAmount(0)
 }
 
-func getContainerUsageSamplesFromSamples(samples []prommodel.SamplePair, resource vpa_model.ResourceName) []model.ContainerUsageSample {
+func getContainerUsageSamplesFromSamples(samples []prommodel.SamplePair, resource model.ResourceName) []model.ContainerUsageSample {
 	res := make([]model.ContainerUsageSample, 0)
 	for _, sample := range samples {
 		res = append(res, model.ContainerUsageSample{
@@ -183,7 +182,7 @@ func getContainerUsageSamplesFromSamples(samples []prommodel.SamplePair, resourc
 	return res
 }
 
-func (p *prometheusHistoryProvider) readResourceHistory(res map[vpa_model.PodID]*PodHistory, query string, resource vpa_model.ResourceName) error {
+func (p *prometheusHistoryProvider) readResourceHistory(res map[model.PodID]*PodHistory, query string, resource model.ResourceName) error {
 	end := time.Now()
 	start := end.Add(-time.Duration(p.historyDuration))
 
@@ -223,7 +222,7 @@ func (p *prometheusHistoryProvider) readResourceHistory(res map[vpa_model.PodID]
 	return nil
 }
 
-func (p *prometheusHistoryProvider) readLastLabels(res map[vpa_model.PodID]*PodHistory, query string) error {
+func (p *prometheusHistoryProvider) readLastLabels(res map[model.PodID]*PodHistory, query string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), p.queryTimeout)
 	defer cancel()
 
@@ -260,8 +259,8 @@ func (p *prometheusHistoryProvider) readLastLabels(res map[vpa_model.PodID]*PodH
 	return nil
 }
 
-func (p *prometheusHistoryProvider) GetClusterHistory() (map[vpa_model.PodID]*PodHistory, error) {
-	res := make(map[vpa_model.PodID]*PodHistory)
+func (p *prometheusHistoryProvider) GetClusterHistory() (map[model.PodID]*PodHistory, error) {
+	res := make(map[model.PodID]*PodHistory)
 	var podSelector string
 	if p.config.CadvisorMetricsJobName != "" {
 		podSelector = fmt.Sprintf("job=\"%s\", ", p.config.CadvisorMetricsJobName)
@@ -274,14 +273,14 @@ func (p *prometheusHistoryProvider) GetClusterHistory() (map[vpa_model.PodID]*Po
 	}
 	historicalCpuQuery := fmt.Sprintf("rate(container_cpu_usage_seconds_total{%s}[%s])", podSelector, p.config.HistoryResolution)
 	klog.V(4).Infof("Historical CPU usage query used: %s", historicalCpuQuery)
-	err := p.readResourceHistory(res, historicalCpuQuery, vpa_model.ResourceCPU)
+	err := p.readResourceHistory(res, historicalCpuQuery, model.ResourceCPU)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get usage history: %v", err)
 	}
 
 	historicalMemoryQuery := fmt.Sprintf("container_memory_working_set_bytes{%s}", podSelector)
 	klog.V(4).Infof("Historical memory usage query used: %s", historicalMemoryQuery)
-	err = p.readResourceHistory(res, historicalMemoryQuery, vpa_model.ResourceMemory)
+	err = p.readResourceHistory(res, historicalMemoryQuery, model.ResourceMemory)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get usage history: %v", err)
 	}

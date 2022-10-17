@@ -30,10 +30,6 @@ import (
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
 	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/history"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/metrics"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/oom"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input/spec"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target"
 	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
@@ -41,6 +37,10 @@ import (
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec"
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/client-go/informers"
@@ -254,9 +254,15 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 			}
 			klog.V(4).Infof("Adding %d samples for container %v", len(sampleList), containerID)
 			for _, sample := range sampleList {
+				sample_mpa := model.ContainerUsageSample{
+					MeasureStart: sample.MeasureStart,
+					Usage: sample.Usage,
+					Request: sample.Request,
+					Resource: sample.Resource,
+				}
 				if err := feeder.clusterState.AddSample(
 					&model.ContainerUsageSampleWithKey{
-						ContainerUsageSample: sample,
+						ContainerUsageSample: sample_mpa,
 						Container:            containerID,
 					}); err != nil {
 					klog.Warningf("Error adding metric sample for container %v: %v", containerID, err)
@@ -469,7 +475,7 @@ func (feeder *clusterStateFeeder) LoadRealTimeMetrics() {
 		for _, sample := range newContainerUsageSamplesWithKey(containerMetrics) {
 			if err := feeder.clusterState.AddSample(sample); err != nil {
 				// Not all pod states are tracked in memory saver mode
-				if _, isKeyError := err.(model.KeyError); isKeyError && feeder.memorySaveMode {
+				if _, isKeyError := err.(vpa_model.KeyError); isKeyError && feeder.memorySaveMode {
 					continue
 				}
 				klog.Warningf("Error adding metric sample for container %v: %v", sample.Container, err)

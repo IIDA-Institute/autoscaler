@@ -19,9 +19,7 @@ package logic
 import (
 	"flag"
 
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
-	// vpa_logic "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 var (
@@ -31,7 +29,7 @@ var (
 	targetCPUPercentile  = flag.Float64("target-cpu-percentile", 0.9, "CPU usage percentile that will be used as a base for CPU target recommendation. Doesn't affect CPU lower bound, CPU upper bound nor memory recommendations.")
 )
 
-// PodResourceRecommender computes resource recommendation for an MPA object.
+// PodResourceRecommender computes resource recommendation for a Vpa object.
 type PodResourceRecommender interface {
 	GetRecommendedPodResources(containerNameToAggregateStateMap model.ContainerNameToAggregateStateMap) RecommendedPodResources
 }
@@ -43,11 +41,11 @@ type RecommendedPodResources map[string]RecommendedContainerResources
 // container.
 type RecommendedContainerResources struct {
 	// Recommended optimal amount of resources.
-	Target vpa_model.Resources
+	Target model.Resources
 	// Recommended minimum amount of resources.
-	LowerBound vpa_model.Resources
+	LowerBound model.Resources
 	// Recommended maximum amount of resources.
-	UpperBound vpa_model.Resources
+	UpperBound model.Resources
 }
 
 type podResourceRecommender struct {
@@ -63,9 +61,9 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 	}
 
 	fraction := 1.0 / float64(len(containerNameToAggregateStateMap))
-	minResources := vpa_model.Resources{
-		vpa_model.ResourceCPU:    vpa_model.ScaleResource(vpa_model.CPUAmountFromCores(*podMinCPUMillicores*0.001), fraction),
-		vpa_model.ResourceMemory: vpa_model.ScaleResource(vpa_model.MemoryAmountFromBytes(*podMinMemoryMb*1024*1024), fraction),
+	minResources := model.Resources{
+		model.ResourceCPU:    model.ScaleResource(model.CPUAmountFromCores(*podMinCPUMillicores*0.001), fraction),
+		model.ResourceMemory: model.ScaleResource(model.MemoryAmountFromBytes(*podMinMemoryMb*1024*1024), fraction),
 	}
 
 	recommender := &podResourceRecommender{
@@ -90,8 +88,8 @@ func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateCo
 }
 
 // FilterControlledResources returns estimations from 'estimation' only for resources present in 'controlledResources'.
-func FilterControlledResources(estimation vpa_model.Resources, controlledResources []vpa_model.ResourceName) vpa_model.Resources {
-	result := make(vpa_model.Resources)
+func FilterControlledResources(estimation model.Resources, controlledResources []model.ResourceName) model.Resources {
+	result := make(model.Resources)
 	for _, resource := range controlledResources {
 		if value, ok := estimation[resource]; ok {
 			result[resource] = value

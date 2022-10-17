@@ -17,16 +17,16 @@ limitations under the License.
 package spec
 
 import (
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	v1lister "k8s.io/client-go/listers/core/v1"
 )
 
 // BasicPodSpec contains basic information defining a pod and its containers.
 type BasicPodSpec struct {
 	// ID identifies a pod within a cluster.
-	ID vpa_model.PodID
+	ID model.PodID
 	// Labels of the pod. It is used to match pods with certain VPA opjects.
 	PodLabels map[string]string
 	// List of containers within this pod.
@@ -38,11 +38,11 @@ type BasicPodSpec struct {
 // BasicContainerSpec contains basic information defining a container.
 type BasicContainerSpec struct {
 	// ID identifies the container within a cluster.
-	ID vpa_model.ContainerID
+	ID model.ContainerID
 	// Name of the image running within the container.
 	Image string
 	// Currently requested resources for this container.
-	Request vpa_model.Resources
+	Request model.Resources
 }
 
 // SpecClient provides information about pods and containers Specification
@@ -77,7 +77,7 @@ func (client *specClient) GetPodSpecs() ([]*BasicPodSpec, error) {
 	return podSpecs, nil
 }
 func newBasicPodSpec(pod *v1.Pod) *BasicPodSpec {
-	podId := vpa_model.PodID{
+	podId := model.PodID{
 		PodName:   pod.Name,
 		Namespace: pod.Namespace,
 	}
@@ -92,7 +92,7 @@ func newBasicPodSpec(pod *v1.Pod) *BasicPodSpec {
 	return basicPodSpec
 }
 
-func newContainerSpecs(podID vpa_model.PodID, pod *v1.Pod) []BasicContainerSpec {
+func newContainerSpecs(podID model.PodID, pod *v1.Pod) []BasicContainerSpec {
 	var containerSpecs []BasicContainerSpec
 
 	for _, container := range pod.Spec.Containers {
@@ -103,9 +103,9 @@ func newContainerSpecs(podID vpa_model.PodID, pod *v1.Pod) []BasicContainerSpec 
 	return containerSpecs
 }
 
-func newContainerSpec(podID vpa_model.PodID, container v1.Container) BasicContainerSpec {
+func newContainerSpec(podID model.PodID, container v1.Container) BasicContainerSpec {
 	containerSpec := BasicContainerSpec{
-		ID: vpa_model.ContainerID{
+		ID: model.ContainerID{
 			PodID:         podID,
 			ContainerName: container.Name,
 		},
@@ -115,16 +115,16 @@ func newContainerSpec(podID vpa_model.PodID, container v1.Container) BasicContai
 	return containerSpec
 }
 
-func calculateRequestedResources(container v1.Container) vpa_model.Resources {
+func calculateRequestedResources(container v1.Container) model.Resources {
 	cpuQuantity := container.Resources.Requests[v1.ResourceCPU]
 	cpuMillicores := cpuQuantity.MilliValue()
 
 	memoryQuantity := container.Resources.Requests[v1.ResourceMemory]
 	memoryBytes := memoryQuantity.Value()
 
-	return vpa_model.Resources{
-		vpa_model.ResourceCPU:    vpa_model.ResourceAmount(cpuMillicores),
-		vpa_model.ResourceMemory: vpa_model.ResourceAmount(memoryBytes),
+	return model.Resources{
+		model.ResourceCPU:    model.ResourceAmount(cpuMillicores),
+		model.ResourceMemory: model.ResourceAmount(memoryBytes),
 	}
 
 }

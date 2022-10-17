@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	core "k8s.io/client-go/testing"
 
-	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"k8s.io/metrics/pkg/client/clientset/versioned/fake"
 )
@@ -50,10 +50,10 @@ func newMetricsClientTestCase() *metricsClientTestCase {
 		namespace:         &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespaceName}},
 	}
 
-	id1 := vpa_model.ContainerID{PodID: vpa_model.PodID{Namespace: namespaceName, PodName: "Pod1"}, ContainerName: "Name1"}
-	id2 := vpa_model.ContainerID{PodID: vpa_model.PodID{Namespace: namespaceName, PodName: "Pod1"}, ContainerName: "Name2"}
-	id3 := vpa_model.ContainerID{PodID: vpa_model.PodID{Namespace: namespaceName, PodName: "Pod2"}, ContainerName: "Name1"}
-	id4 := vpa_model.ContainerID{PodID: vpa_model.PodID{Namespace: namespaceName, PodName: "Pod2"}, ContainerName: "Name2"}
+	id1 := model.ContainerID{PodID: model.PodID{Namespace: namespaceName, PodName: "Pod1"}, ContainerName: "Name1"}
+	id2 := model.ContainerID{PodID: model.PodID{Namespace: namespaceName, PodName: "Pod1"}, ContainerName: "Name2"}
+	id3 := model.ContainerID{PodID: model.PodID{Namespace: namespaceName, PodName: "Pod2"}, ContainerName: "Name1"}
+	id4 := model.ContainerID{PodID: model.PodID{Namespace: namespaceName, PodName: "Pod2"}, ContainerName: "Name2"}
 
 	testCase.pod1Snaps = append(testCase.pod1Snaps, testCase.newContainerMetricsSnapshot(id1, 400, 333))
 	testCase.pod1Snaps = append(testCase.pod1Snaps, testCase.newContainerMetricsSnapshot(id2, 800, 666))
@@ -67,14 +67,14 @@ func newEmptyMetricsClientTestCase() *metricsClientTestCase {
 	return &metricsClientTestCase{}
 }
 
-func (tc *metricsClientTestCase) newContainerMetricsSnapshot(id vpa_model.ContainerID, cpuUsage int64, memUsage int64) *ContainerMetricsSnapshot {
+func (tc *metricsClientTestCase) newContainerMetricsSnapshot(id model.ContainerID, cpuUsage int64, memUsage int64) *ContainerMetricsSnapshot {
 	return &ContainerMetricsSnapshot{
 		ID:             id,
 		SnapshotTime:   tc.snapshotTimestamp,
 		SnapshotWindow: tc.snapshotWindow,
-		Usage: vpa_model.Resources{
-			vpa_model.ResourceCPU:    vpa_model.ResourceAmount(cpuUsage),
-			vpa_model.ResourceMemory: vpa_model.ResourceAmount(memUsage),
+		Usage: model.Resources{
+			model.ResourceCPU:    model.ResourceAmount(cpuUsage),
+			model.ResourceMemory: model.ResourceAmount(memUsage),
 		},
 	}
 }
@@ -118,11 +118,11 @@ func makePodMetrics(snaps []*ContainerMetricsSnapshot) metricsapi.PodMetrics {
 	return podMetrics
 }
 
-func calculateResourceList(usage vpa_model.Resources) k8sapiv1.ResourceList {
-	cpuCores := big.NewRat(int64(usage[vpa_model.ResourceCPU]), 1000)
+func calculateResourceList(usage model.Resources) k8sapiv1.ResourceList {
+	cpuCores := big.NewRat(int64(usage[model.ResourceCPU]), 1000)
 	cpuQuantityString := cpuCores.FloatString(3)
 
-	memoryBytes := big.NewInt(int64(usage[vpa_model.ResourceMemory]))
+	memoryBytes := big.NewInt(int64(usage[model.ResourceMemory]))
 	memoryQuantityString := memoryBytes.String()
 
 	resourceMap := map[k8sapiv1.ResourceName]resource.Quantity{

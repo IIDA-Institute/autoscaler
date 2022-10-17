@@ -52,14 +52,6 @@ import (
 // that aggregates state of containers with that name.
 type ContainerNameToAggregateStateMap map[string]*AggregateContainerState
 
-const (
-	// SupportedCheckpointVersion is the tag of the supported version of serialized checkpoints.
-	// Version id should be incremented on every non incompatible change, i.e. if the new
-	// version of the recommender binary can't initialize from the old checkpoint format or the
-	// previous version of the recommender binary can't initialize from the new checkpoint format.
-	SupportedCheckpointVersion = "v3"
-)
-
 // ContainerStateAggregator is an interface for objects that consume and
 // aggregate container usage samples.
 type ContainerStateAggregator interface {
@@ -237,14 +229,14 @@ func (a *AggregateContainerState) SaveToCheckpoint() (*vpa_types.VerticalPodAuto
 		TotalSamplesCount: a.TotalSamplesCount,
 		MemoryHistogram:   *memory,
 		CPUHistogram:      *cpu,
-		Version:           SupportedCheckpointVersion,
+		Version:           vpa_model.SupportedCheckpointVersion,
 	}, nil
 }
 
 // LoadFromCheckpoint deserializes data from VerticalPodAutoscalerCheckpointStatus
 // into the AggregateContainerState.
 func (a *AggregateContainerState) LoadFromCheckpoint(checkpoint *vpa_types.VerticalPodAutoscalerCheckpointStatus) error {
-	if checkpoint.Version != SupportedCheckpointVersion {
+	if checkpoint.Version != vpa_model.SupportedCheckpointVersion {
 		return fmt.Errorf("unsuported checkpoint version %s", checkpoint.Version)
 	}
 	a.TotalSamplesCount = checkpoint.TotalSamplesCount
