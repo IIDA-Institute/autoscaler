@@ -84,7 +84,7 @@ type Mpa struct {
 	ResourcePolicy *vpa_types.PodResourcePolicy
 	// Initial checkpoints of AggregateContainerStates for containers.
 	// The key is container name.
-	ContainersInitialAggregateState ContainerNameToAggregateStateMap
+	ContainersInitialAggregateState vpa_model.ContainerNameToAggregateStateMap
 	// UpdateMode describes how recommendations will be applied to pods
 	UpdateMode *vpa_types.UpdateMode
 	// Created denotes timestamp of the original MPA object creation
@@ -106,7 +106,7 @@ func NewMpa(id MpaID, selector labels.Selector, created time.Time) *Mpa {
 		ID:                              id,
 		PodSelector:                     selector,
 		aggregateContainerStates:        make(aggregateContainerStatesMap),
-		ContainersInitialAggregateState: make(ContainerNameToAggregateStateMap),
+		ContainersInitialAggregateState: make(vpa_model.ContainerNameToAggregateStateMap),
 		Created:                         created,
 		Annotations:                     make(mpaAnnotationsMap),
 		Conditions:                      make(mpaConditionsMap),
@@ -183,7 +183,7 @@ func (mpa *Mpa) SetUpdateMode(updatePolicy *mpa_types.PodUpdatePolicy) {
 }
 
 // MergeCheckpointedState adds checkpointed MPA aggregations to the given aggregateStateMap.
-func (mpa *Mpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameToAggregateStateMap) {
+func (mpa *Mpa) MergeCheckpointedState(aggregateContainerStateMap vpa_model.ContainerNameToAggregateStateMap) {
 	for containerName, aggregation := range mpa.ContainersInitialAggregateState {
 		aggregateContainerState, found := aggregateContainerStateMap[containerName]
 		if !found {
@@ -196,7 +196,7 @@ func (mpa *Mpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameT
 
 // AggregateStateByContainerName returns a map from container name to the aggregated state
 // of all containers with that name, belonging to pods matched by the MPA.
-func (mpa *Mpa) AggregateStateByContainerName() ContainerNameToAggregateStateMap {
+func (mpa *Mpa) AggregateStateByContainerName() vpa_model.ContainerNameToAggregateStateMap {
 	containerNameToAggregateStateMap := AggregateStateByContainerName(mpa.aggregateContainerStates)
 	mpa.MergeCheckpointedState(containerNameToAggregateStateMap)
 	return containerNameToAggregateStateMap

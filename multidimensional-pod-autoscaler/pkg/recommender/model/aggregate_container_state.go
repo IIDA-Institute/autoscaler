@@ -44,16 +44,8 @@ import (
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
-const (
-	// minSampleWeight is the minimal weight of any sample (prior to including decaying factor)
-	// TODO: This variable is also defined in VPA recommender (aggregations_config.go).
-	minSampleWeight = 0.1
-)
-
-// ContainerNameToAggregateStateMap maps a container name to AggregateContainerState
-// that aggregates state of containers with that name.
-type ContainerNameToAggregateStateMap map[string]*vpa_model.AggregateContainerState
-
+// The isStateExpired and isStateEmpty functions are from VPA lib (because isExpired and isEmpty
+// are private functions so not callable).
 func isStateExpired(a *vpa_model.AggregateContainerState, now time.Time) bool {
 	if isStateEmpty(a) {
 		return now.Sub(a.CreationTime) >= vpa_model.GetAggregationsConfig().GetMemoryAggregationWindowLength()
@@ -68,8 +60,8 @@ func isStateEmpty(a *vpa_model.AggregateContainerState) bool {
 // AggregateStateByContainerName takes a set of AggregateContainerStates and merge them
 // grouping by the container name. The result is a map from the container name to the aggregation
 // from all input containers with the given name.
-func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainerStatesMap) ContainerNameToAggregateStateMap {
-	containerNameToAggregateStateMap := make(ContainerNameToAggregateStateMap)
+func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainerStatesMap) vpa_model.ContainerNameToAggregateStateMap {
+	containerNameToAggregateStateMap := make(vpa_model.ContainerNameToAggregateStateMap)
 	for aggregationKey, aggregation := range aggregateContainerStateMap {
 		containerName := aggregationKey.ContainerName()
 		aggregateContainerState, isInitialized := containerNameToAggregateStateMap[containerName]
