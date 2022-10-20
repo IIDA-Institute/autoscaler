@@ -76,6 +76,9 @@ type ControllerKeyWithAPIVersion struct {
 type ControllerFetcher interface {
 	// FindTopMostWellKnownOrScalable returns topmost well-known or scalable controller. Error is returned if controller cannot be found.
 	FindTopMostWellKnownOrScalable(controller *ControllerKeyWithAPIVersion) (*ControllerKeyWithAPIVersion, error)
+	// For HPA.
+	GetRESTMappings(groupKind schema.GroupKind) ([]*apimeta.RESTMapping, error)
+	Scales(namespace string) (scale.ScaleInterface)
 }
 
 type controllerFetcher struct {
@@ -346,4 +349,12 @@ func (f *controllerFetcher) FindTopMostWellKnownOrScalable(key *ControllerKeyWit
 
 		key = owner
 	}
+}
+
+func (f *controllerFetcher) GetRESTMappings(groupKind schema.GroupKind) ([]*apimeta.RESTMapping, error) {
+	return f.mapper.RESTMappings(groupKind)
+}
+
+func (f *controllerFetcher) Scales(namespace string) (scale.ScaleInterface) {
+	return f.scaleNamespacer.Scales(namespace)
 }

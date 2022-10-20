@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	autoscaling "k8s.io/api/autoscaling/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -50,8 +51,12 @@ type MultidimPodAutoscalerSpec struct {
 	// +optional
 	UpdatePolicy *PodUpdatePolicy `json:"updatePolicy,omitempty"`
 
-	// Describes the goals in terms of both resource utilization and workload performance.
-	Goals *ScalingGoals `json:"goals"`
+	// Contains the specifications about the metric type and target in terms of resource
+	// utilization or workload performance. See the individual metric source types for
+	// more information about how each type of metric must respond.
+	// +listType=atomic
+	// +optional
+	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty"`
 
 	// Describes the constraints for the number of replicas.
 	Constraints *HorizontalScalingConstraints `json:"constraints,omitempty"`
@@ -87,25 +92,10 @@ type MultidimPodAutoscalerStatus struct {
 	// +optional
 	Recommendation *vpa.RecommendedPodResources `json:"recommendation,omitempty"`
 
-	// Current average CPU utilization over all pods, represented as a ratio with the requested CPU.
-	// E.g., 0.7 means that an average pod is using now 70% of its requested CPU.
+	// The last read state of the metrics used by this autoscaler.
+	// +listType=atomic
 	// +optional
-	CurrentCPUUtilization float64 `json:"currentCPUUtilization,omitempty"`
-
-	// Current average memory utilization over all pods, represented as a ratio with the requested
-	// memory.
-	// +optional
-	CurrentMemoryUtilization float64 `json:"currentMemoryUtilization,omitempty"`
-
-	// Current average latency preservation over all pods, represented as a ratio with the target
-	// latency.
-	// +optional
-	CurrentLatencyPreservation float64 `json:"currentLatencyPreservation,omitempty"`
-
-	// Current average throughput preservation over all pods, represented as a ratio with the
-	// target throughput.
-	// +optional
-	CurrentThroughputPreservation float64 `json:"currentThroughputPreservation,omitempty"`
+	CurrentMetrics []autoscalingv2.MetricStatus `json:"currentMetrics"`
 
 	// Conditions is the set of conditions required for this autoscaler to scale its target, and
 	// indicates whether or not those conditions are met.
@@ -123,32 +113,6 @@ type PodUpdatePolicy struct {
 	UpdateMode *vpa.UpdateMode `json:"updateMode,omitempty"`
 }
 
-// ScalingGoals describes the resource utilization and performance goals.
-type ScalingGoals struct {
-	GoalMetrics []*GoalMetric `json:"goalMetrics,omitempty"`
-}
-
-// GoalMetric describes a metric type with the goal for this metric.
-type GoalMetric struct {
-	Type      *MetricType `json:"type,omitempty"`
-	AvgTarget float64    `json:"avgTarget,omitempty"`
-}
-
-// MetricType controls which metric the goal is corresponding to.
-// +kubebuilder:validation:Enum=Utilization;Latency;Throughput
-type MetricType string
-
-const (
-	// MetricTypeCPUUtilization means the goal is for CPU resource utilization.
-	MetricTypeCPUUtilization MetricType = "CPUUtilization"
-	// MetricTypeMemoryUtilization means the goal is for memory resource utilization.
-	MetricTypeMemoryUtilization MetricType = "MemoryUtilization"
-	// MetricTypeLatency means the goal is for latency.
-	MetricTypeLatency MetricType = "Latency"
-	// MetricTypeThroughput means the goal is for throughput.
-	MetricTypeThroughput MetricType = "Throughput"
-)
-
 // HorizontalScalingConstraints describes the constraints for horizontal scaling.
 type HorizontalScalingConstraints struct {
 	// Lower limit for the number of pods that can be set by the autoscaler, default 1.
@@ -157,6 +121,10 @@ type HorizontalScalingConstraints struct {
 	// Upper limit for the number of pods that can be set by the autoscaler; cannot be smaller than
 	// MinReplicas.
 	MaxReplicas *int32 `json:"maxReplicas"`
+	// Behavior configures the scaling behavior of the target in both Up and Down direction
+	// (scaleUp and scaleDown fields respectively).
+	// +optional
+	Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior `json:"behavior,omitempty"`
 }
 
 // MultidimPodAutoscalerRecommenderSelector points to a specific Multidimensional Pod Autoscaler
@@ -205,6 +173,15 @@ var (
 	// ConfigUnsupported indicates that this MPA configuration is unsupported and recommendations
 	// will not be provided for it.
 	ConfigUnsupported MultidimPodAutoscalerConditionType = "ConfigUnsupported"
+	// ScalingActive indicates that the MPA controller is able to scale if necessary, i.e.,
+	// it is correctly configured, can fetch the desired metrics, and isn't disabled.
+	ScalingActive MultidimPodAutoscalerConditionType = "ScalingActive"
+	// AbleToScale indicates a lack of transient issues which prevent scaling from occurring,
+	// such as being in a backoff window, or being unable to access/update the target scale.
+	AbleToScale MultidimPodAutoscalerConditionType = "AbleToScale"
+	// ScalingLimited indicates that the calculated scale based on metrics would be above or
+	// below the range for the MPA, and has thus been capped.
+	ScalingLimited MultidimPodAutoscalerConditionType = "ScalingLimited"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

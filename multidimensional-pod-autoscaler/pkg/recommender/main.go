@@ -17,21 +17,33 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input"
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/common"
+	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/routines"
 	metrics_recommender "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
+	kube_client "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/restmapper"
 	kube_flag "k8s.io/component-base/cli/flag"
 	klog "k8s.io/klog/v2"
+
+	"k8s.io/client-go/discovery"
+	cacheddiscovery "k8s.io/client-go/discovery/cached"
+	hpa_metrics "k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
+	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
+	"k8s.io/metrics/pkg/client/custom_metrics"
+	"k8s.io/metrics/pkg/client/external_metrics"
 )
 
 var (
@@ -68,6 +80,34 @@ var (
 	cpuHistogramDecayHalfLife      = flag.Duration("cpu-histogram-decay-half-life", vpa_model.DefaultCPUHistogramDecayHalfLife, `The amount of time it takes a historical CPU usage sample to lose half of its weight.`)
 )
 
+// HPA-related flags
+var (
+	// horizontalPodAutoscalerSyncPeriod is the period for syncing the number of pods in MPA.
+	hpaSyncPeriod                   = flag.Duration("hpa-sync-period", 15 * time.Second, `The period for syncing the number of pods in horizontal pod autoscaler.`)
+	// horizontalPodAutoscalerUpscaleForbiddenWindow is a period after which next upscale allowed.
+	hpaUpscaleForbiddenWindow       = flag.Duration("hpa-upscale-forbidden-window", 3 * time.Minute, `The period after which next upscale allowed.`)
+	// horizontalPodAutoscalerDownscaleForbiddenWindow is a period after which next downscale allowed.
+	hpaDownscaleForbiddenWindow     = flag.Duration("hpa-downscale-forbidden-window", 5 * time.Minute, `The period after which next downscale allowed.`)
+	// HorizontalPodAutoscalerDowncaleStabilizationWindow is a period for which autoscaler will look
+	// backwards and not scale down below any recommendation it made during that period.
+	hpaDownscaleStabilizationWindow = flag.Duration("hpa-downscale-stabilization-window", 5 * time.Minute, `The period for which autoscaler will look backwards and not scale down below any recommendation it made during that period.`)
+	// horizontalPodAutoscalerTolerance is the tolerance for when resource usage suggests upscaling/downscaling
+	hpaTolerance                    = flag.Float64("hpa-tolerance", 0.1, `The tolerance for when resource usage suggests horizontally upscaling/downscaling.`)
+	// HorizontalPodAutoscalerCPUInitializationPeriod is the period after pod start when CPU samples
+	// might be skipped.
+	hpaCPUInitializationPeriod      = flag.Duration("hpa-cpu-initialization-period", 5 * time.Minute, `The period after pod start when CPU samples might be skipped.`)
+	// HorizontalPodAutoscalerInitialReadinessDelay is period after pod start during which readiness
+	// changes are treated as readiness being set for the first time. The only effect of this is
+	// that HPA will disregard CPU samples from unready pods that had last readiness change during
+	// that period.
+	hpaInitialReadinessDelay        = flag.Duration("hpa-initial-readiness-delay", 30 * time.Second, `The period after pod start during which readiness changes are treated as readiness being set for the first time.`)
+	concurrentHPASyncs = flag.Int64("concurrent-hpa-syncs", 5, `The number of horizontal pod autoscaler objects that are allowed to sync concurrently. Larger number = more responsive MPA objects processing, but more CPU (and network) load.`)
+)
+
+const (
+	discoveryResetPeriod time.Duration = 5 * time.Minute
+)
+
 func main() {
 	klog.InitFlags(nil)
 	kube_flag.InitFlags()
@@ -83,7 +123,36 @@ func main() {
 	metrics_quality.Register()
 
 	useCheckpoints := *storage != "prometheus"
-	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *mpaObjectNamespace, *recommenderName)
+
+	// For HPA.
+	kubeClient := kube_client.NewForConfigOrDie(config)
+	// Use a discovery client capable of being refreshed.
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		klog.Fatalf("Could not create discoveryClient: %v", err)
+	}
+	cachedDiscoveryClient := cacheddiscovery.NewMemCacheClient(discoveryClient)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscoveryClient)
+	go wait.Until(func() {
+		mapper.Reset()
+	}, discoveryResetPeriod, make(chan struct{}))
+	mpaClient := mpa_clientset.NewForConfigOrDie(config)
+	apiVersionsGetter := custom_metrics.NewAvailableAPIsGetter(mpaClient.Discovery())
+	ctx := context.Background()  // TODO: Add a deadline to this ctx?
+	// invalidate the discovery information roughly once per resync interval our API
+	// information is *at most* two resync intervals old.
+	go custom_metrics.PeriodicallyInvalidate(
+		apiVersionsGetter,
+		*hpaSyncPeriod,
+		ctx.Done())
+
+	metricsClient := hpa_metrics.NewRESTMetricsClient(
+		resourceclient.NewForConfigOrDie(config),
+		custom_metrics.NewForConfig(config, mapper, apiVersionsGetter),
+		external_metrics.NewForConfigOrDie(config),
+	)
+	
+	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *mpaObjectNamespace, *recommenderName, kubeClient.CoreV1(), metricsClient, *hpaSyncPeriod, *hpaDownscaleStabilizationWindow, *hpaTolerance, *hpaCPUInitializationPeriod, *hpaInitialReadinessDelay)
 	klog.Infof("MPA Recommender created!")
 
 	promQueryTimeout, err := time.ParseDuration(*queryTimeout)
@@ -122,7 +191,7 @@ func main() {
 	ticker := time.Tick(*metricsFetcherInterval)
 	klog.Info("Start running MPA Recommender...")
 	for range ticker {
-		recommender.RunOnce()
+		recommender.RunOnce(int(*concurrentHPASyncs))
 		healthCheck.UpdateLastActivity()
 		klog.Info("Health check completed.")
 	}

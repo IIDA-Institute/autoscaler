@@ -5,6 +5,7 @@ import (
 	"time"
 
 	autoscaling "k8s.io/api/autoscaling/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -65,7 +66,6 @@ func (conditionsMap *mpaConditionsMap) ConditionActive(conditionType mpa_types.M
 
 // Mpa (Multidimensional Pod Autoscaler) object is responsible for horizontal and vertical scaling
 // of Pods matching a given label selector.
-// TODO: add HPA-related fields
 type Mpa struct {
 	ID MpaID
 	// Labels selector that determines which Pods are controlled by this MPA
@@ -97,6 +97,17 @@ type Mpa struct {
 	ScaleTargetRef *autoscaling.CrossVersionObjectReference
 	// PodCount contains number of live Pods matching a given MPA object.
 	PodCount int
+
+	// Added for HPA-related fields.
+	// TODO: Currently HPA-related logic is directly manipulating the MPA object but not the MPA
+	// model here.
+	Metrics []*autoscalingv2.MetricSpec
+	MinReplicas int32
+	MaxReplicas int32
+	HorizontalScalingBehavior *autoscalingv2.HorizontalPodAutoscalerBehavior
+	Namespace string
+	DesiredReplicas int32
+	CurrentMetrics []autoscalingv2.MetricStatus
 }
 
 // NewMpa returns a new Mpa with a given ID and pod selector. Doesn't set the

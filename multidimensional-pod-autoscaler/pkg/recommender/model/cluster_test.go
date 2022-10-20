@@ -24,13 +24,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	autoscaling "k8s.io/api/autoscaling/v1"
 	apiv1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/scale"
 	"k8s.io/klog/v2"
 )
 
@@ -66,6 +70,16 @@ var (
 type fakeControllerFetcher struct {
 	key *controllerfetcher.ControllerKeyWithAPIVersion
 	err error
+	mapper restmapper.DeferredDiscoveryRESTMapper
+	scaleNamespacer scale.ScalesGetter
+}
+
+func (f *fakeControllerFetcher) GetRESTMappings(groupKind schema.GroupKind) ([]*apimeta.RESTMapping, error) {
+	return f.mapper.RESTMappings(groupKind)
+}
+
+func (f *fakeControllerFetcher) Scales(namespace string) (scale.ScaleInterface) {
+	return f.scaleNamespacer.Scales(namespace)
 }
 
 func (f *fakeControllerFetcher) FindTopMostWellKnownOrScalable(controller *controllerfetcher.ControllerKeyWithAPIVersion) (*controllerfetcher.ControllerKeyWithAPIVersion, error) {

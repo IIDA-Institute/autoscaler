@@ -20,9 +20,13 @@ import (
 	"context"
 	"flag"
 	"sort"
+	"sync"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/scheme"
 	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/checkpoint"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/input"
@@ -36,9 +40,17 @@ import (
 	vpa_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/informers"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	kube_client "k8s.io/client-go/kubernetes"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	klog "k8s.io/klog/v2"
+	hpa "k8s.io/kubernetes/pkg/controller/podautoscaler"
+	metricsclient "k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
 )
 
 const (
@@ -56,16 +68,31 @@ var (
 	memorySaver             = flag.Bool("memory-saver", false, `If true, only track pods which have an associated MPA`)
 )
 
+// From HPA
+var (
+	scaleUpLimitFactor  = 2.0
+	scaleUpLimitMinimum = 4.0
+)
+type timestampedRecommendation struct {
+	recommendation int32
+	timestamp      time.Time
+}
+type timestampedScaleEvent struct {
+	replicaChange int32  // absolute value, non-negative
+	timestamp     time.Time
+	outdated      bool
+}
+
 // Recommender recommend resources for certain containers, based on utilization periodically got from metrics api.
 type Recommender interface {
 	// RunOnce performs one iteration of recommender duties followed by update of recommendations in MPA objects.
-	RunOnce()
+	RunOnce(workers int)
 	// GetClusterState returns ClusterState used by Recommender
 	GetClusterState() *model.ClusterState
 	// GetClusterStateFeeder returns ClusterStateFeeder used by Recommender
 	GetClusterStateFeeder() input.ClusterStateFeeder
 	// UpdateMPAs computes recommendations and sends MPAs status updates to API Server
-	UpdateMPAs()
+	UpdateMPAs(ctx context.Context)
 	// MaintainCheckpoints stores current checkpoints in API Server and garbage collect old ones
 	// MaintainCheckpoints writes at least minCheckpoints if there are more checkpoints to write.
 	// Checkpoints are written until ctx permits or all checkpoints are written.
@@ -73,6 +100,7 @@ type Recommender interface {
 }
 
 type recommender struct {
+	// Fields inherited from VPA.
 	clusterState                  *model.ClusterState
 	clusterStateFeeder            input.ClusterStateFeeder
 	checkpointWriter              checkpoint.CheckpointWriter
@@ -83,6 +111,23 @@ type recommender struct {
 	podResourceRecommender        logic.PodResourceRecommender
 	useCheckpoints                bool
 	lastAggregateContainerStateGC time.Time
+
+	// Fields for HPA.
+	replicaCalc                   *hpa.ReplicaCalculator
+	eventRecorder                 record.EventRecorder
+	downscaleStabilisationWindow  time.Duration
+	podLister                     corelisters.PodLister
+	podListerSynced               cache.InformerSynced
+	// Controllers that need to be synced.
+	queue                         workqueue.RateLimitingInterface
+	// Latest unstabilized recommendations for each autoscaler.
+	recommendations               map[model.MpaID][]timestampedRecommendation
+	recommendationsLock           sync.Mutex
+	// Latest autoscaler events.
+	scaleUpEvents                 map[model.MpaID][]timestampedScaleEvent
+	scaleUpEventsLock             sync.RWMutex
+	scaleDownEvents               map[model.MpaID][]timestampedScaleEvent
+	scaleDownEventsLock           sync.RWMutex
 }
 
 func (r *recommender) GetClusterState() *model.ClusterState {
@@ -94,7 +139,7 @@ func (r *recommender) GetClusterStateFeeder() input.ClusterStateFeeder {
 }
 
 // Updates MPA CRD objects' statuses.
-func (r *recommender) UpdateMPAs() {
+func (r *recommender) UpdateMPAs(ctx context.Context) {
 	cnt := metrics_recommender.NewObjectCounter()
 	defer cnt.Observe()
 
@@ -110,6 +155,11 @@ func (r *recommender) UpdateMPAs() {
 			klog.V(4).Infof("MPA %v not found in the cluster state map!", key)
 			continue
 		}
+
+		// Horizontal Pod Autoscaling.
+		r.ReconcileHorizontalAutoscaling(ctx, observedMpa, key)
+
+		// Vertical Pod Autoscaling
 		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
 		had := mpa.HasRecommendation()
 		mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
@@ -194,7 +244,7 @@ func (r *recommender) MaintainCheckpoints(ctx context.Context, minCheckpointsPer
 	}
 }
 
-func (r *recommender) RunOnce() {
+func (r *recommender) RunOnce(workers int) {
 	timer := metrics_recommender.NewExecutionTimer()
 	defer timer.ObserveTotal()
 
@@ -202,7 +252,12 @@ func (r *recommender) RunOnce() {
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(*checkpointsWriteTimeout))
 	defer cancelFunc()
 
+	// From HPA.
+	defer utilruntime.HandleCrash()
+	defer r.queue.ShutDown()
+
 	klog.V(3).Infof("Recommender Run")
+	defer klog.V(3).Infof("Shutting down MPA Recommender")
 
 	r.clusterStateFeeder.LoadMPAs()
 	timer.ObserveStep("LoadMPAs")
@@ -214,7 +269,7 @@ func (r *recommender) RunOnce() {
 	timer.ObserveStep("LoadMetrics")
 	klog.V(3).Infof("ClusterState is tracking %v PodStates and %v MPAs", len(r.clusterState.Pods), len(r.clusterState.Mpas))
 
-	r.UpdateMPAs()
+	r.UpdateMPAs(ctx)
 	timer.ObserveStep("UpdateMPAs")
 
 	r.MaintainCheckpoints(ctx, *minCheckpointsPerRun)
@@ -237,12 +292,29 @@ type RecommenderFactory struct {
 
 	CheckpointsGCInterval time.Duration
 	UseCheckpoints        bool
+
+	// For HPA.
+	EvtNamespacer                 v1core.EventsGetter
+	PodInformer                   coreinformers.PodInformer
+	MetricsClient                 metricsclient.MetricsClient
+	ResyncPeriod                  time.Duration
+	DownscaleStabilisationWindow  time.Duration
+	Tolerance                     float64
+	CpuInitializationPeriod       time.Duration
+	DelayOfInitialReadinessStatus time.Duration
 }
 
 // Make creates a new recommender instance,
 // which can be run in order to provide continuous resource recommendations for containers.
 func (c RecommenderFactory) Make() Recommender {
+	// For HPA.
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartStructuredLogging(0)
+	broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: c.EvtNamespacer.Events("")})
+	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "horizontal-pod-autoscaler"})
+
 	recommender := &recommender{
+		// From VPA.
 		clusterState:                  c.ClusterState,
 		clusterStateFeeder:            c.ClusterStateFeeder,
 		checkpointWriter:              c.CheckpointWriter,
@@ -253,7 +325,33 @@ func (c RecommenderFactory) Make() Recommender {
 		podResourceRecommender:        c.PodResourceRecommender,
 		lastAggregateContainerStateGC: time.Now(),
 		lastCheckpointGC:              time.Now(),
+
+		// From HPA.
+		downscaleStabilisationWindow:  c.DownscaleStabilisationWindow,
+		// podLister is able to list/get Pods from the shared cache from the informer passed in to
+		// NewHorizontalController.
+		queue:                         workqueue.NewNamedRateLimitingQueue(hpa.NewDefaultHPARateLimiter(c.ResyncPeriod), "horizontalpodautoscaler"),
+		eventRecorder:                 recorder,
+		recommendations:               map[model.MpaID][]timestampedRecommendation{},
+		recommendationsLock:           sync.Mutex{},
+		scaleUpEvents:                 map[model.MpaID][]timestampedScaleEvent{},
+		scaleUpEventsLock:             sync.RWMutex{},
+		scaleDownEvents:               map[model.MpaID][]timestampedScaleEvent{},
+		scaleDownEventsLock:           sync.RWMutex{},
 	}
+
+	recommender.podLister = c.PodInformer.Lister()
+	recommender.podListerSynced = c.PodInformer.Informer().HasSynced
+
+	replicaCalc := hpa.NewReplicaCalculator(
+		c.MetricsClient,
+		recommender.podLister,
+		c.Tolerance,
+		c.CpuInitializationPeriod,
+		c.DelayOfInitialReadinessStatus,
+	)
+	recommender.replicaCalc = replicaCalc
+
 	klog.V(3).Infof("New Recommender created %+v", recommender)
 	return recommender
 }
@@ -261,7 +359,8 @@ func (c RecommenderFactory) Make() Recommender {
 // NewRecommender creates a new recommender instance.
 // Dependencies are created automatically.
 // Deprecated; use RecommenderFactory instead.
-func NewRecommender(config *rest.Config, checkpointsGCInterval time.Duration, useCheckpoints bool, namespace string, recommenderName string) Recommender {
+func NewRecommender(config *rest.Config, checkpointsGCInterval time.Duration, useCheckpoints bool, namespace string, recommenderName string, evtNamespacer v1core.EventsGetter, metricsClient metricsclient.MetricsClient, resyncPeriod time.Duration, downscaleStabilisationWindow time.Duration, tolerance float64, cpuInitializationPeriod time.Duration, delayOfInitialReadinessStatus time.Duration,
+) Recommender {
 	clusterState := model.NewClusterState(AggregateContainerStateGCInterval)
 	kubeClient := kube_client.NewForConfigOrDie(config)
 	factory := informers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncPeriod, informers.WithNamespace(namespace))
@@ -275,5 +374,15 @@ func NewRecommender(config *rest.Config, checkpointsGCInterval time.Duration, us
 		PodResourceRecommender: logic.CreatePodResourceRecommender(),
 		CheckpointsGCInterval:  checkpointsGCInterval,
 		UseCheckpoints:         useCheckpoints,
+
+		// For HPA.
+		EvtNamespacer:                 evtNamespacer,
+		PodInformer:                   factory.Core().V1().Pods(),
+		MetricsClient:                 metricsClient,
+		ResyncPeriod:                  resyncPeriod,
+		DownscaleStabilisationWindow:  downscaleStabilisationWindow,
+		Tolerance:                     tolerance,
+		CpuInitializationPeriod:       cpuInitializationPeriod,
+		DelayOfInitialReadinessStatus: delayOfInitialReadinessStatus,
 	}.Make()
 }
