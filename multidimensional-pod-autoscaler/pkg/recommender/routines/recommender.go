@@ -43,11 +43,8 @@ import (
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	kube_client "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
 	klog "k8s.io/klog/v2"
 	hpa "k8s.io/kubernetes/pkg/controller/podautoscaler"
 	metricsclient "k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
@@ -116,10 +113,7 @@ type recommender struct {
 	replicaCalc                   *hpa.ReplicaCalculator
 	eventRecorder                 record.EventRecorder
 	downscaleStabilisationWindow  time.Duration
-	podLister                     corelisters.PodLister
-	podListerSynced               cache.InformerSynced
 	// Controllers that need to be synced.
-	queue                         workqueue.RateLimitingInterface
 	// Latest unstabilized recommendations for each autoscaler.
 	recommendations               map[model.MpaID][]timestampedRecommendation
 	recommendationsLock           sync.Mutex
@@ -254,7 +248,6 @@ func (r *recommender) RunOnce(workers int) {
 
 	// From HPA.
 	defer utilruntime.HandleCrash()
-	defer r.queue.ShutDown()
 
 	klog.V(3).Infof("Recommender Run")
 	defer klog.V(3).Infof("Shutting down MPA Recommender")
@@ -330,7 +323,6 @@ func (c RecommenderFactory) Make() Recommender {
 		downscaleStabilisationWindow:  c.DownscaleStabilisationWindow,
 		// podLister is able to list/get Pods from the shared cache from the informer passed in to
 		// NewHorizontalController.
-		queue:                         workqueue.NewNamedRateLimitingQueue(hpa.NewDefaultHPARateLimiter(c.ResyncPeriod), "horizontalpodautoscaler"),
 		eventRecorder:                 recorder,
 		recommendations:               map[model.MpaID][]timestampedRecommendation{},
 		recommendationsLock:           sync.Mutex{},
@@ -340,12 +332,9 @@ func (c RecommenderFactory) Make() Recommender {
 		scaleDownEventsLock:           sync.RWMutex{},
 	}
 
-	recommender.podLister = c.PodInformer.Lister()
-	recommender.podListerSynced = c.PodInformer.Informer().HasSynced
-
 	replicaCalc := hpa.NewReplicaCalculator(
 		c.MetricsClient,
-		recommender.podLister,
+		recommender.clusterStateFeeder.GetPodLister(),
 		c.Tolerance,
 		c.CpuInitializationPeriod,
 		c.DelayOfInitialReadinessStatus,

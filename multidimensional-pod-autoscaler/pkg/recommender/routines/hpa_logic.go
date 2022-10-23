@@ -2,6 +2,7 @@ package routines
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -16,8 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	mpa_api "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1alpha1"
 	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/recommender/model"
 	klog "k8s.io/klog/v2"
 )
@@ -78,6 +81,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		return fmt.Errorf("failed to query scale subresource for %s: %v", reference, err)
 	}
 	setCondition(mpa, mpa_types.AbleToScale, v1.ConditionTrue, "SucceededGetScale", "the MPA recommender was able to get the target's current scale")
+	klog.V(4).Infof("MPA recommender was able to get the target's current scale = %d", scale.Spec.Replicas)
 	currentReplicas := scale.Spec.Replicas
 	r.recordInitialRecommendation(currentReplicas, key)
 
@@ -128,7 +132,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 			return fmt.Errorf("failed to compute desired number of replicas based on listed metrics for %s: %v", reference, err)
 		}
 
-		klog.V(4).Infof("Proposing %v desired replicas (based on %s from %s) for %s", metricDesiredReplicas, metricName, metricTimestamp, reference)
+		klog.V(4).Infof("metricDesiredReplicas = %d desired replicas (based on %s from %s) for %s", metricDesiredReplicas, metricName, metricTimestamp, reference)
 
 		rescaleMetric := ""
 		if metricDesiredReplicas > desiredReplicas {
@@ -223,14 +227,43 @@ func (r *recommender) updateStatusIfNeeded(ctx context.Context, oldStatus *mpa_t
 	if apiequality.Semantic.DeepEqual(oldStatus, &newMPA.Status) {
 		return nil
 	}
-	return r.updateStatus(ctx, newMPA)
+
+	patches := []patchRecord{{
+		Op:    "add",
+		Path:  "/status",
+		Value: newMPA.Status,
+	}}
+	klog.V(4).Infof("Updating MPA status with the desired number of replicas = %d", newMPA.Status.DesiredReplicas)
+
+	return patchMpa(r.mpaClient.MultidimPodAutoscalers(newMPA.Namespace), newMPA.Name, patches)
+}
+
+type patchRecord struct {
+	Op    string      `json:"op,inline"`
+	Path  string      `json:"path,inline"`
+	Value interface{} `json:"value"`
+}
+
+func patchMpa(mpaClient mpa_api.MultidimPodAutoscalerInterface, mpaName string, patches []patchRecord) (err error) {
+	bytes, err := json.Marshal(patches)
+	if err != nil {
+		klog.Errorf("Cannot marshal MPA status patches %+v. Reason: %+v", patches, err)
+		return
+	}
+
+	updatedMPA, err := mpaClient.Patch(context.TODO(), mpaName, types.JSONPatchType, bytes, metav1.PatchOptions{})
+
+	// TODO: check the updated MPA object status.
+	klog.V(4).Infof("MPA %s status updated", updatedMPA.Name)
+
+	return err
 }
 
 // updateStatus actually does the update request for the status of the given MPA
 func (r *recommender) updateStatus(ctx context.Context, mpa *mpa_types.MultidimPodAutoscaler) error {
 	_, err := r.mpaClient.MultidimPodAutoscalers(mpa.Namespace).UpdateStatus(ctx, mpa, metav1.UpdateOptions{})
 	if err != nil {
-		klog.Errorf("%s: FailedUpdateStatus - error: %v", v1.EventTypeWarning, err.Error())
+		klog.Errorf("%s: FailedUpdateStatus - error updating status for MPA %s (namespace %s): %v", v1.EventTypeWarning, mpa.Name, mpa.Namespace, err.Error())
 		r.eventRecorder.Event(mpa, v1.EventTypeWarning, "FailedUpdateStatus", err.Error())
 		return fmt.Errorf("failed to update status for %s: %v", mpa.Name, err)
 	}
@@ -294,6 +327,7 @@ func (r *recommender) computeReplicasForMetrics(ctx context.Context, mpa *mpa_ty
 		setCondition(mpa, mpa_types.ScalingActive, v1.ConditionFalse, "InvalidSelector", errMsg)
 		return 0, "", nil, time.Time{}, fmt.Errorf(errMsg)
 	}
+	klog.V(4).Infof("Label Selector parsed as %v", selector)
 
 	specReplicas := scale.Spec.Replicas
 	statusReplicas := scale.Status.Replicas
@@ -336,6 +370,7 @@ func (r *recommender) computeReplicasForMetrics(ctx context.Context, mpa *mpa_ty
 func (r *recommender) computeReplicasForMetric(ctx context.Context, mpa *mpa_types.MultidimPodAutoscaler, spec autoscalingv2.MetricSpec, specReplicas, statusReplicas int32, selector labels.Selector, status *autoscalingv2.MetricStatus) (replicaCountProposal int32, metricNameProposal string, timestampProposal time.Time, condition mpa_types.MultidimPodAutoscalerCondition, err error) {
 	switch spec.Type {
 	case autoscalingv2.ObjectMetricSourceType:
+		klog.V(4).Infof("Pulling metrics from the source of type ObjectMetricSourceType")
 		metricSelector, err := metav1.LabelSelectorAsSelector(spec.Object.Metric.Selector)
 		if err != nil {
 			condition := r.getUnableComputeReplicaCountCondition(mpa, "FailedGetObjectMetric", err)
@@ -346,6 +381,7 @@ func (r *recommender) computeReplicasForMetric(ctx context.Context, mpa *mpa_typ
 			return 0, "", time.Time{}, condition, fmt.Errorf("failed to get object metric value: %v", err)
 		}
 	case autoscalingv2.PodsMetricSourceType:
+		klog.V(4).Infof("Pulling metrics from the source of type PodMetricSourceType")
 		metricSelector, err := metav1.LabelSelectorAsSelector(spec.Pods.Metric.Selector)
 		if err != nil {
 			condition := r.getUnableComputeReplicaCountCondition(mpa, "FailedGetPodsMetric", err)
@@ -356,21 +392,25 @@ func (r *recommender) computeReplicasForMetric(ctx context.Context, mpa *mpa_typ
 			return 0, "", time.Time{}, condition, fmt.Errorf("failed to get pods metric value: %v", err)
 		}
 	case autoscalingv2.ResourceMetricSourceType:
+		klog.V(4).Infof("Pulling metrics from the source of type ResourceMetricSourceType")
 		replicaCountProposal, timestampProposal, metricNameProposal, condition, err = r.computeStatusForResourceMetric(ctx, specReplicas, spec, mpa, selector, status)
 		if err != nil {
 			return 0, "", time.Time{}, condition, fmt.Errorf("failed to get %s resource metric value: %v", spec.Resource.Name, err)
 		}
 	case autoscalingv2.ContainerResourceMetricSourceType:
+		klog.V(4).Infof("Pulling metrics from the source of type ContainerResourceMetricSourceType")
 		replicaCountProposal, timestampProposal, metricNameProposal, condition, err = r.computeStatusForContainerResourceMetric(ctx, specReplicas, spec, mpa, selector, status)
 		if err != nil {
 			return 0, "", time.Time{}, condition, fmt.Errorf("failed to get %s container metric value: %v", spec.ContainerResource.Container, err)
 		}
 	case autoscalingv2.ExternalMetricSourceType:
+		klog.V(4).Infof("Pulling metrics from the source of type ExternalMetricSourceType")
 		replicaCountProposal, timestampProposal, metricNameProposal, condition, err = r.computeStatusForExternalMetric(specReplicas, statusReplicas, spec, mpa, selector, status)
 		if err != nil {
 			return 0, "", time.Time{}, condition, fmt.Errorf("failed to get %s external metric value: %v", spec.External.Metric.Name, err)
 		}
 	default:
+		klog.Warningf("Unknown metric source type!")
 		errMsg := fmt.Sprintf("unknown metric source type %q", string(spec.Type))
 		err = fmt.Errorf(errMsg)
 		condition := r.getUnableComputeReplicaCountCondition(mpa, "InvalidMetricSourceType", err)
@@ -491,6 +531,7 @@ func (r *recommender) computeStatusForResourceMetricGeneric(ctx context.Context,
 		AverageUtilization: &percentageProposal,
 		AverageValue:       resource.NewMilliQuantity(rawProposal, resource.DecimalSI),
 	}
+	klog.V(4).Infof("Current average utilization = %d average value = %v", percentageProposal, status.AverageValue)
 	return replicaCountProposal, &status, timestampProposal, metricNameProposal, mpa_types.MultidimPodAutoscalerCondition{}, nil
 }
 

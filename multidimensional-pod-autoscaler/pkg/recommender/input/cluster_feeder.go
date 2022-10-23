@@ -85,6 +85,9 @@ type ClusterStateFeeder interface {
 
 	// GarbageCollectCheckpoints removes historical checkpoints that don't have a matching MPA.
 	GarbageCollectCheckpoints()
+
+	// Get the PodLister (for HPA).
+	GetPodLister() v1lister.PodLister
 }
 
 // ClusterStateFeederFactory makes instances of ClusterStateFeeder.
@@ -112,6 +115,7 @@ func (m ClusterStateFeederFactory) Make() *clusterStateFeeder {
 		mpaLister:           m.MpaLister,
 		clusterState:        m.ClusterState,
 		specClient:          spec.NewSpecClient(m.PodLister),
+		PodLister:           m.PodLister,
 		selectorFetcher:     m.SelectorFetcher,
 		memorySaveMode:      m.MemorySaveMode,
 		controllerFetcher:   m.ControllerFetcher,
@@ -233,6 +237,7 @@ type clusterStateFeeder struct {
 	memorySaveMode      bool
 	controllerFetcher   controllerfetcher.ControllerFetcher
 	recommenderName     string
+	PodLister           v1lister.PodLister  // For HPA.
 }
 
 func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider history.HistoryProvider) {
@@ -307,6 +312,10 @@ func (feeder *clusterStateFeeder) InitFromCheckpoints() {
 
 		}
 	}
+}
+
+func (feeder *clusterStateFeeder) GetPodLister() v1lister.PodLister {
+	return feeder.PodLister
 }
 
 func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
