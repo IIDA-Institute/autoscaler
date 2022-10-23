@@ -253,8 +253,7 @@ func patchMpa(mpaClient mpa_api.MultidimPodAutoscalerInterface, mpaName string, 
 
 	updatedMPA, err := mpaClient.Patch(context.TODO(), mpaName, types.JSONPatchType, bytes, metav1.PatchOptions{})
 
-	// TODO: check the updated MPA object status.
-	klog.V(4).Infof("MPA %s status updated", updatedMPA.Name)
+	klog.V(4).Infof("MPA %s status updated (desiredReplicas = %d)", updatedMPA.Name, updatedMPA.Status.DesiredReplicas)
 
 	return err
 }

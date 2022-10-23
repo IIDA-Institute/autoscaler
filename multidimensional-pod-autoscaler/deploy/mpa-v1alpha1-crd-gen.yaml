@@ -1221,6 +1221,20 @@ spec:
                       type: object
                     type: array
                 type: object
+              # lastScaleTime:
+              #   properties: TODO
+              #   description: TODO
+              #   type: object
+              currentReplicas:
+                description: The current number of replicas
+                type: integer
+              desiredReplicas:
+                description: The desired number of replicas
+                type: integer
+              # currentMetrics:
+              #   properties: TODO
+              #   required: TODO
+              #   type: array
             type: object
         required:
         - spec
