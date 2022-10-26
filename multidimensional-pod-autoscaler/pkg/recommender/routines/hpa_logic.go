@@ -49,6 +49,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		r.eventRecorder.Event(mpa, v1.EventTypeWarning, "FailedGetScale", err.Error())
 		setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedGetScale", "the MPA recommender was unable to get the target's current scale: %v", err)
 		if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+			klog.Errorf("Error updating MPA status: %v", err.Error())
 			utilruntime.HandleError(err)
 		}
 		return fmt.Errorf("invalid API version in scale target reference: %v", err)
@@ -65,6 +66,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		r.eventRecorder.Event(mpa, v1.EventTypeWarning, "FailedGetScale", err.Error())
 		setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedGetScale", "the MPA recommender was unable to get the target's current scale: %v", err)
 		if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+			klog.Errorf("Error updating MPA status: %v", err.Error())
 			utilruntime.HandleError(err)
 		}
 		return fmt.Errorf("unable to determine resource for scale target reference: %v", err)
@@ -76,6 +78,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		r.eventRecorder.Event(mpa, v1.EventTypeWarning, "FailedGetScale", err.Error())
 		setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedGetScale", "the MPA recommender was unable to get the target's current scale: %v", err)
 		if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+			klog.Errorf("Error updating MPA status: %v", err.Error())
 			utilruntime.HandleError(err)
 		}
 		return fmt.Errorf("failed to query scale subresource for %s: %v", reference, err)
@@ -125,6 +128,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		if err != nil {
 			r.setCurrentReplicasInStatus(mpa, currentReplicas)
 			if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+				klog.Errorf("Error updating MPA status: %v", err.Error())
 				utilruntime.HandleError(err)
 			}
 			r.eventRecorder.Event(mpa, v1.EventTypeWarning, "FailedComputeMetricsReplicas", err.Error())
@@ -163,6 +167,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 			setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedUpdateScale", "the MPA controller was unable to update the target scale: %v", err)
 			r.setCurrentReplicasInStatus(mpa, currentReplicas)
 			if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+				klog.Errorf("Error updating MPA status: %v", err.Error())
 				utilruntime.HandleError(err)
 			}
 			return fmt.Errorf("failed to rescale %s: %v", reference, err)

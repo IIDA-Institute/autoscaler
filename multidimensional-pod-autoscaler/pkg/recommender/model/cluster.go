@@ -274,6 +274,9 @@ func (cluster *ClusterState) AddOrUpdateMpa(apiObject *mpa_types.MultidimPodAuto
 	mpa.Recommendation = currentRecommendation
 	mpa.SetUpdateMode(apiObject.Spec.UpdatePolicy)
 	mpa.SetResourcePolicy(apiObject.Spec.ResourcePolicy)
+
+	// For HPA-related fields.
+	mpa.SetHPAConstraints(apiObject.Spec.Metrics, *apiObject.Spec.Constraints.MinReplicas, *apiObject.Spec.Constraints.MaxReplicas, apiObject.Spec.Constraints.Behavior)
 	return nil
 }
 

@@ -436,6 +436,9 @@ spec:
                             apiVersion:
                               description: API version of the referent
                               type: string
+                          required:
+                          - kind
+                          - name
                           type: object
                         target:
                           description: Specifies the target value for the given metric
@@ -448,101 +451,23 @@ spec:
                               - "Value"
                               - "AverageValue"
                             value:
-                              description: The target value of the metric (as a quantity).
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageValue:
-                              description: The target value of the average of the metric across all relevant pods (as a quantity)
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageUtilization:
                               description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
                               format: int32
                               type: integer
+                          required:
+                          - type
                           type: object
                         metric:
                           description: Identifies the target metric by name and selector
@@ -554,8 +479,9 @@ spec:
                               description: The string-encoded form of a standard Kubernetes label selector for the given metric
                               properties:
                                 matchLabels:
-                                  description: A map of {key,value} pairs
-                                  type: string
+                                  additionalProperties:
+                                    type: string
+                                  type: object
                                 matchExpressions:
                                   description: A list of label selector requirements
                                   items:
@@ -579,7 +505,13 @@ spec:
                                     - operator
                                   type: array
                               type: object
+                          required:
+                          - name
                           type: object
+                      required:
+                      - describedObject
+                      - metric
+                      - target
                       type: object
                     pods:
                       description: Pods refers to a metric describing each pod in the current scale target (e.g., transactions-processed-per-second). The values will be averaged together before being compared to the target value.
@@ -594,8 +526,9 @@ spec:
                               description: The string-encoded form of a standard Kubernetes label selector for the given metric
                               properties:
                                 matchLabels:
-                                  description: A map of {key,value} pairs
-                                  type: string
+                                  additionalProperties:
+                                    type: string
+                                  type: object
                                 matchExpressions:
                                   description: A list of label selector requirements
                                   items:
@@ -619,6 +552,8 @@ spec:
                                     - operator
                                   type: array
                               type: object
+                          required:
+                          - name
                           type: object
                         target:
                           description: Specifies the target value for the given metric
@@ -631,102 +566,27 @@ spec:
                               - "Value"
                               - "AverageValue"
                             value:
-                              description: The target value of the metric (as a quantity).
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageValue:
-                              description: The target value of the average of the metric across all relevant pods (as a quantity)
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageUtilization:
                               description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
                               format: int32
                               type: integer
+                          required:
+                          - type
                           type: object
+                      required:
+                      - metric
+                      - target
                       type: object
                     resource:
                       description: Resource refers to a resource metric (such as those specified in requests and limits) known to Kubernetes describing each pod in the current scale target (e.g. CPU or memory). Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the "pods" source.
@@ -745,102 +605,27 @@ spec:
                               - "Value"
                               - "AverageValue"
                             value:
-                              description: The target value of the metric (as a quantity).
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageValue:
-                              description: The target value of the average of the metric across all relevant pods (as a quantity)
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageUtilization:
                               description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
                               format: int32
                               type: integer
+                          required:
+                          - type
                           type: object
+                      required:
+                      - name
+                      - target
                       type: object
                     containerResource:
                       description: ContainerResource refers to a resource metric (such as those specified in requests and limits) known to Kubernetes describing a single container in each pod of the current scale target (e.g. CPU or memory). Such metrics are built in to Kubernetes, and have special scaling options on top of those available to normal per-pod metrics using the "pods" source.
@@ -859,105 +644,31 @@ spec:
                               - "Value"
                               - "AverageValue"
                             value:
-                              description: The target value of the metric (as a quantity).
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageValue:
-                              description: The target value of the average of the metric across all relevant pods (as a quantity)
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageUtilization:
                               description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
                               format: int32
                               type: integer
+                          required:
+                          - type
                           type: object
                         container:
                           description: Specifies the name of the container in the pods of the scaling target
                           type: string
+                      required:
+                      - name
+                      - target
+                      - container
                       type: object
                     external:
                       description: External refers to a global metric that is not associated with any Kubernetes object. It allows autoscaling based on information coming from components running outside of cluster (for example length of queue in cloud messaging service, or QPS from loadbalancer running outside of cluster).
@@ -972,8 +683,9 @@ spec:
                               description: The string-encoded form of a standard Kubernetes label selector for the given metric
                               properties:
                                 matchLabels:
-                                  description: A map of {key,value} pairs
-                                  type: string
+                                  additionalProperties:
+                                    type: string
+                                  type: object
                                 matchExpressions:
                                   description: A list of label selector requirements
                                   items:
@@ -997,6 +709,8 @@ spec:
                                     - operator
                                   type: array
                               type: object
+                          required:
+                          - name
                           type: object
                         target:
                           description: Specifies the target value for the given metric
@@ -1009,102 +723,27 @@ spec:
                               - "Value"
                               - "AverageValue"
                             value:
-                              description: The target value of the metric (as a quantity).
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageValue:
-                              description: The target value of the average of the metric across all relevant pods (as a quantity)
-                              properties:
-                                i:
-                                  description: The quantity in int64 scaled form, if d.Dec == nil
-                                  properties:
-                                    value:
-                                      description: N/A
-                                      format: int64
-                                      type: integer
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                d:
-                                  description: The quantity in inf.Dec form if d.Dec != nil
-                                  properties:
-                                    unscaled:
-                                      description: N/A
-                                      properties:
-                                        neg:
-                                          description: Sign
-                                          type: boolean
-                                        abs:
-                                          description: Absolute value of the integer
-                                          items:
-                                            description: N/A
-                                            format: uint
-                                            type: integer
-                                            required:
-                                            - word
-                                          type: array
-                                      type: object
-                                    scale:
-                                      description: N/A
-                                      format: int32
-                                      type: integer
-                                  type: object
-                                s:
-                                  description: The generated value of this quantity to avoid recalculation
-                                  type: string
-                                format:
-                                  description: Change Format at will.
-                                  type: string
-                              type: object
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
                             averageUtilization:
                               description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
                               format: int32
                               type: integer
+                          required:
+                          - type
                           type: object
+                      required:
+                          - metric
+                          - target
                       type: object
                   required:
                   - type
@@ -1221,20 +860,312 @@ spec:
                       type: object
                     type: array
                 type: object
-              # lastScaleTime:
-              #   properties: TODO
-              #   description: TODO
-              #   type: object
+              lastScaleTime:
+                description: The last time the MultidimPodAutoscaler scaled.
+                format: date-time
+                type: string
               currentReplicas:
                 description: The current number of replicas
+                format: int32
                 type: integer
               desiredReplicas:
                 description: The desired number of replicas
+                format: int32
                 type: integer
-              # currentMetrics:
-              #   properties: TODO
-              #   required: TODO
-              #   type: array
+              currentMetrics:
+                description: The last read state of the metrics used by this autoscaler.
+                items:
+                  description: Describes the last-read state of a single metric.
+                  properties:
+                    type:
+                      description: The type of metric source.
+                      type: string
+                    object:
+                      description: A metric describing a single Kubernetes object.
+                      properties:
+                        metric:
+                          description: Identifies the target metric by name and selector
+                          properties:
+                            name:
+                              description: The name of the given metric
+                              type: string
+                            selector:
+                              description: The string-encoded form of a standard Kubernetes label selector for the given metric
+                              properties:
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  type: object
+                                matchExpressions:
+                                  description: A list of label selector requirements
+                                  items:
+                                    description: Label selector requirement
+                                    properties:
+                                      key:
+                                        description: The label key that the selector applies to
+                                        type: string
+                                      operator:
+                                        description: The key's relationship to a set of values.
+                                        type: string
+                                      values:
+                                        description: An array of string values.
+                                        type: array
+                                        items:
+                                          description: N/A
+                                          type: string
+                                    type: object
+                                    required:
+                                    - key
+                                    - operator
+                                  type: array
+                              type: object
+                          required:
+                          - name
+                          type: object
+                        current:
+                          description: The current value for the given metric.
+                          properties:
+                            value:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageValue:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageUtilization:
+                              description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
+                              format: int32
+                              type: integer
+                          type: object
+                        describedObject:
+                          description: Specifies the descriptions of a object,such as kind,name apiVersion
+                          properties:
+                            kind:
+                              description: Kind of the referent
+                              type: string
+                            name:
+                              description: Name of the referent
+                              type: string
+                            apiVersion:
+                              description: API version of the referent
+                              type: string
+                          required:
+                          - kind
+                          - name
+                          type: object
+                      required:
+                      - current
+                      - metric
+                      - describedObject
+                      type: object
+                    pods:
+                      description: A metric describing each pod in the current scale target.
+                      properties:
+                        metric:
+                          description: Identifies the target metric by name and selector
+                          properties:
+                            name:
+                              description: The name of the given metric
+                              type: string
+                            selector:
+                              description: The string-encoded form of a standard Kubernetes label selector for the given metric
+                              properties:
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  type: object
+                                matchExpressions:
+                                  description: A list of label selector requirements
+                                  items:
+                                    description: Label selector requirement
+                                    properties:
+                                      key:
+                                        description: The label key that the selector applies to
+                                        type: string
+                                      operator:
+                                        description: The key's relationship to a set of values.
+                                        type: string
+                                      values:
+                                        description: An array of string values.
+                                        type: array
+                                        items:
+                                          description: N/A
+                                          type: string
+                                    type: object
+                                    required:
+                                    - key
+                                    - operator
+                                  type: array
+                              type: object
+                          required:
+                          - name
+                          type: object
+                        current:
+                          description: The current value for the given metric.
+                          properties:
+                            value:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageValue:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageUtilization:
+                              description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
+                              format: int32
+                              type: integer
+                          type: object
+                      required:
+                      - current
+                      - metric
+                      type: object
+                    resource:
+                      description: A resource metric (request or limit) known to Kubernetes describing each pod in the scale target.
+                      properties:
+                        name:
+                          description: The name of the resource.
+                          type: string
+                        current:
+                          description: The current value for the given metric.
+                          properties:
+                            value:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageValue:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageUtilization:
+                              description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
+                              format: int32
+                              type: integer
+                          type: object
+                      required:
+                      - current
+                      - name
+                      type: object
+                    containerResource:
+                      description: A resource metric (request or limit) known to Kubernetes describing a single container in the scale target.
+                      properties:
+                        name:
+                          description: The name of the resource.
+                          type: string
+                        current:
+                          description: The current value for the given metric.
+                          properties:
+                            value:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageValue:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageUtilization:
+                              description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
+                              format: int32
+                              type: integer
+                          type: object
+                        container:
+                          description: The name of the container in the pods of the scaling target.
+                          type: string
+                      required:
+                      - current
+                      - name
+                      - container
+                      type: object
+                    external:
+                      description: A global metric that is not associated with any Kubernetes object.
+                      properties:
+                        metric:
+                          description: Identifies the target metric by name and selector
+                          properties:
+                            name:
+                              description: The name of the given metric
+                              type: string
+                            selector:
+                              description: The string-encoded form of a standard Kubernetes label selector for the given metric
+                              properties:
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  type: object
+                                matchExpressions:
+                                  description: A list of label selector requirements
+                                  items:
+                                    description: Label selector requirement
+                                    properties:
+                                      key:
+                                        description: The label key that the selector applies to
+                                        type: string
+                                      operator:
+                                        description: The key's relationship to a set of values.
+                                        type: string
+                                      values:
+                                        description: An array of string values.
+                                        type: array
+                                        items:
+                                          description: N/A
+                                          type: string
+                                    type: object
+                                    required:
+                                    - key
+                                    - operator
+                                  type: array
+                              type: object
+                          required:
+                          - name
+                          type: object
+                        current:
+                          description: The current value for the given metric.
+                          properties:
+                            value:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageValue:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            averageUtilization:
+                              description: The target value of the average of the resource metric across all relevant pods, represented as a percentage of the requested value of the resource for the pods
+                              format: int32
+                              type: integer
+                          type: object
+                      required:
+                      - metric
+                      - current
+                      type: object
+                  type: object
+                  required:
+                  - type
+                type: array
+            required:
+            - currentReplicas
+            - desiredReplicas
             type: object
         required:
         - spec

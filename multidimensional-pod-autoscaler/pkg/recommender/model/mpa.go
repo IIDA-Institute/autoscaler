@@ -101,11 +101,10 @@ type Mpa struct {
 	// Added for HPA-related fields.
 	// TODO: Currently HPA-related logic is directly manipulating the MPA object but not the MPA
 	// model here.
-	Metrics []*autoscalingv2.MetricSpec
+	Metrics []autoscalingv2.MetricSpec
 	MinReplicas int32
 	MaxReplicas int32
 	HorizontalScalingBehavior *autoscalingv2.HorizontalPodAutoscalerBehavior
-	Namespace string
 	DesiredReplicas int32
 	CurrentMetrics []autoscalingv2.MetricStatus
 }
@@ -191,6 +190,24 @@ func (mpa *Mpa) SetUpdateMode(updatePolicy *mpa_types.PodUpdatePolicy) {
 	for _, state := range mpa.aggregateContainerStates {
 		state.UpdateMode = mpa.UpdateMode
 	}
+}
+
+// Set HPA-related constraints.
+func (mpa *Mpa) SetHPAConstraints(metrics []autoscalingv2.MetricSpec, minReplicas int32, maxReplicas int32, hpaBehavior *autoscalingv2.HorizontalPodAutoscalerBehavior) {
+	mpa.Metrics = metrics
+	mpa.MinReplicas = minReplicas
+	mpa.MaxReplicas = maxReplicas
+	mpa.HorizontalScalingBehavior = hpaBehavior
+}
+
+// Set the desired number of replicas.
+func (mpa *Mpa) SetDesiredNumberOfReplicas(replicas int32) {
+	mpa.DesiredReplicas = replicas
+}
+
+// Set the current metrics.
+func (mpa *Mpa) SetCurrentMetrics(metrics []autoscalingv2.MetricStatus) {
+	mpa.CurrentMetrics = metrics
 }
 
 // MergeCheckpointedState adds checkpointed MPA aggregations to the given aggregateStateMap.

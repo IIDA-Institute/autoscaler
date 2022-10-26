@@ -150,10 +150,8 @@ func (r *recommender) UpdateMPAs(ctx context.Context) {
 			continue
 		}
 
-		// Horizontal Pod Autoscaling.
-		r.ReconcileHorizontalAutoscaling(ctx, observedMpa, key)
-
 		// Vertical Pod Autoscaling
+		klog.V(4).Infof("Vertical scaling...")
 		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
 		had := mpa.HasRecommendation()
 		mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
@@ -184,6 +182,15 @@ func (r *recommender) UpdateMPAs(ctx context.Context) {
 		if err != nil {
 			klog.Errorf(
 				"Cannot update MPA %v object. Reason: %+v", mpa.ID.MpaName, err)
+		}
+
+		// Horizontal Pod Autoscaling
+		observedMpa.Status.Recommendation = mpa.AsStatus().Recommendation
+		observedMpa.Status.Conditions = mpa.AsStatus().Conditions
+		klog.V(4).Infof("Horizontal scaling...")
+		errHPA := r.ReconcileHorizontalAutoscaling(ctx, observedMpa, key)
+		if errHPA != nil {
+			klog.Errorf("Error updating MPA status: %v", errHPA.Error())
 		}
 	}
 }
@@ -341,7 +348,7 @@ func (c RecommenderFactory) Make() Recommender {
 	)
 	recommender.replicaCalc = replicaCalc
 
-	klog.V(3).Infof("New Recommender created %+v", recommender)
+	klog.V(3).Infof("New Recommender created!")
 	return recommender
 }
 
