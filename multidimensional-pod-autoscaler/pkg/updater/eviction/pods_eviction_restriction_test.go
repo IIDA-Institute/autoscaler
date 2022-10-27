@@ -277,7 +277,7 @@ func TestEvictReplicatedByController(t *testing.T) {
 		for _, p := range testCase.pods {
 			pods = append(pods, p.pod)
 		}
-		factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, 2, testCase.evictionTollerance)
+		factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, nil, 2, testCase.evictionTollerance)
 		eviction := factory.NewPodsEvictionRestriction(pods, testCase.mpa)
 		for i, p := range testCase.pods {
 			assert.Equalf(t, p.canEvict, eviction.CanEvict(p.pod), "TC %v - unexpected CanEvict result for pod-%v %#v", testCase.name, i, p.pod)
@@ -316,7 +316,7 @@ func TestEvictReplicatedByReplicaSet(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&rs.ObjectMeta, &rs.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(nil, &rs, nil, 2, 0.5)
+	factory, _ := getEvictionRestrictionFactory(nil, &rs, nil, nil, 2, 0.5)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
@@ -355,13 +355,49 @@ func TestEvictReplicatedByStatefulSet(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&ss.ObjectMeta, &ss.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(nil, nil, &ss, 2, 0.5)
+	factory, _ := getEvictionRestrictionFactory(nil, nil, &ss, nil, 2, 0.5)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
 		assert.True(t, eviction.CanEvict(pod))
 	}
 
+	for _, pod := range pods[:2] {
+		err := eviction.Evict(pod, test.FakeEventRecorder())
+		assert.Nil(t, err, "Should evict with no error")
+	}
+	for _, pod := range pods[2:] {
+		err := eviction.Evict(pod, test.FakeEventRecorder())
+		assert.Error(t, err, "Error expected")
+	}
+}
+
+func TestEvictReplicatedByDaemonSet(t *testing.T) {
+	livePods := int32(5)
+
+	ds := appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ds",
+			Namespace: "default",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind: "DaemonSet",
+		},
+		Status: appsv1.DaemonSetStatus{
+			NumberReady: livePods,
+		},
+	}
+
+	pods := make([]*apiv1.Pod, livePods)
+	for i := range pods {
+		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&ds.ObjectMeta, &ds.TypeMeta).Get()
+	}
+	factory, _ := getEvictionRestrictionFactory(nil, nil, nil, &ds, 2, 0.5)
+	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
+
+	for _, pod := range pods {
+		assert.True(t, eviction.CanEvict(pod))
+	}
 	for _, pod := range pods[:2] {
 		err := eviction.Evict(pod, test.FakeEventRecorder())
 		assert.Nil(t, err, "Should evict with no error")
@@ -390,7 +426,7 @@ func TestEvictReplicatedByJob(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&job.ObjectMeta, &job.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(nil, nil, nil, 2, 0.5)
+	factory, _ := getEvictionRestrictionFactory(nil, nil, nil, nil, 2, 0.5)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
@@ -429,7 +465,7 @@ func TestEvictTooFewReplicas(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&rc.ObjectMeta, &rc.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, 10, 0.5)
+	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, nil, 10, 0.5)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
@@ -465,7 +501,7 @@ func TestEvictionTolerance(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&rc.ObjectMeta, &rc.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, 2 /*minReplicas*/, tolerance)
+	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, nil, 2 /*minReplicas*/, tolerance)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
@@ -505,7 +541,7 @@ func TestEvictAtLeastOne(t *testing.T) {
 		pods[i] = test.Pod().WithName(getTestPodName(i)).WithCreator(&rc.ObjectMeta, &rc.TypeMeta).Get()
 	}
 
-	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, 2, tolerance)
+	factory, _ := getEvictionRestrictionFactory(&rc, nil, nil, nil, 2, tolerance)
 	eviction := factory.NewPodsEvictionRestriction(pods, getBasicMpa())
 
 	for _, pod := range pods {
@@ -523,7 +559,7 @@ func TestEvictAtLeastOne(t *testing.T) {
 }
 
 func getEvictionRestrictionFactory(rc *apiv1.ReplicationController, rs *appsv1.ReplicaSet,
-	ss *appsv1.StatefulSet, minReplicas int,
+	ss *appsv1.StatefulSet, ds *appsv1.DaemonSet, minReplicas int,
 	evictionToleranceFraction float64) (PodsEvictionRestrictionFactory, error) {
 	kubeClient := &fake.Clientset{}
 	rcInformer := coreinformer.NewReplicationControllerInformer(kubeClient, apiv1.NamespaceAll,
@@ -531,6 +567,8 @@ func getEvictionRestrictionFactory(rc *apiv1.ReplicationController, rs *appsv1.R
 	rsInformer := appsinformer.NewReplicaSetInformer(kubeClient, apiv1.NamespaceAll,
 		0*time.Second, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	ssInformer := appsinformer.NewStatefulSetInformer(kubeClient, apiv1.NamespaceAll,
+		0*time.Second, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	dsInformer := appsinformer.NewDaemonSetInformer(kubeClient, apiv1.NamespaceAll,
 		0*time.Second, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	if rc != nil {
 		err := rcInformer.GetIndexer().Add(rc)
@@ -550,11 +588,18 @@ func getEvictionRestrictionFactory(rc *apiv1.ReplicationController, rs *appsv1.R
 			return nil, fmt.Errorf("Error adding object to cache: %v", err)
 		}
 	}
+	if ds != nil {
+		err := dsInformer.GetIndexer().Add(ds)
+		if err != nil {
+			return nil, fmt.Errorf("Error adding object to cache: %v", err)
+		}
+	}
 	return &podsEvictionRestrictionFactoryImpl{
 		client:                    kubeClient,
 		rsInformer:                rsInformer,
 		rcInformer:                rcInformer,
 		ssInformer:                ssInformer,
+		dsInformer:                dsInformer,
 		minReplicas:               minReplicas,
 		evictionToleranceFraction: evictionToleranceFraction,
 	}, nil
