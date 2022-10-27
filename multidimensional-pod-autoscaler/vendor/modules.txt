@@ -347,7 +347,6 @@ k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util
-k8s.io/autoscaler/vertical-pod-autoscaler/pkg/updater/eviction
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/annotations
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange
 k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics
