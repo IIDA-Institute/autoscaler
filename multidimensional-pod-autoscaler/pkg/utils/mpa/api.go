@@ -23,8 +23,10 @@ import (
 	"strings"
 	"time"
 
+	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -37,6 +39,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
+
+// MpaWithSelector is a pair of MPA and its selector.
+type MpaWithSelector struct {
+	Mpa      *mpa_types.MultidimPodAutoscaler
+	Selector labels.Selector
+}
 
 type patchRecord struct {
 	Op    string      `json:"op,inline"`
@@ -111,4 +119,57 @@ func UpdateMpaStatusIfNeeded(mpaClient mpa_api.MultidimPodAutoscalerInterface, m
 		return patchMpa(mpaClient, mpaName, patches)
 	}
 	return nil, nil
+}
+
+// GetUpdateMode returns the updatePolicy.updateMode for a given MPA.
+// If the mode is not specified it returns the default (UpdateModeAuto).
+func GetUpdateMode(mpa *mpa_types.MultidimPodAutoscaler) vpa_types.UpdateMode {
+	if mpa.Spec.UpdatePolicy == nil || mpa.Spec.UpdatePolicy.UpdateMode == nil || *mpa.Spec.UpdatePolicy.UpdateMode == "" {
+		return vpa_types.UpdateModeAuto
+	}
+	return *mpa.Spec.UpdatePolicy.UpdateMode
+}
+
+// PodMatchesMPA returns true iff the mpaWithSelector matches the Pod.
+func PodMatchesMPA(pod *core.Pod, mpaWithSelector *MpaWithSelector) bool {
+	return PodLabelsMatchMPA(pod.Namespace, labels.Set(pod.GetLabels()), mpaWithSelector.Mpa.Namespace, mpaWithSelector.Selector)
+}
+
+// PodLabelsMatchMPA returns true iff the mpaWithSelector matches the pod labels.
+func PodLabelsMatchMPA(podNamespace string, labels labels.Set, mpaNamespace string, mpaSelector labels.Selector) bool {
+	if podNamespace != mpaNamespace {
+		return false
+	}
+	return mpaSelector.Matches(labels)
+}
+
+// stronger returns true iff a is before b in the order to control a Pod (that matches both MPAs).
+func stronger(a, b *mpa_types.MultidimPodAutoscaler) bool {
+	// Assume a is not nil and each valid object is before nil object.
+	if b == nil {
+		return true
+	}
+	// Compare creation timestamps of the MPA objects. This is the clue of the stronger logic.
+	var aTime, bTime meta.Time
+	aTime = a.GetCreationTimestamp()
+	bTime = b.GetCreationTimestamp()
+	if !aTime.Equal(&bTime) {
+		return aTime.Before(&bTime)
+	}
+	// If the timestamps are the same (unlikely, but possible e.g. in test environments): compare by name to have a complete deterministic order.
+	return a.GetName() < b.GetName()
+}
+
+// GetControllingMPAForPod chooses the earliest created MPA from the input list that matches the given Pod.
+func GetControllingMPAForPod(pod *core.Pod, mpas []*MpaWithSelector) *MpaWithSelector {
+	var controlling *MpaWithSelector
+	var controllingMpa *mpa_types.MultidimPodAutoscaler
+	// Choose the strongest MPA from the ones that match this Pod.
+	for _, mpaWithSelector := range mpas {
+		if PodMatchesMPA(pod, mpaWithSelector) && stronger(mpaWithSelector.Mpa, controllingMpa) {
+			controlling = mpaWithSelector
+			controllingMpa = controlling.Mpa
+		}
+	}
+	return controlling
 }

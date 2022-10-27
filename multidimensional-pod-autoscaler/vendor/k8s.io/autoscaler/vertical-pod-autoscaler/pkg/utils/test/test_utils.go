@@ -26,13 +26,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
-	mpa_lister "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1alpha1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_types_v1beta1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta1"
 	vpa_lister "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1"
 	vpa_lister_v1beta1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1beta1"
-	v1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -199,37 +197,6 @@ func (m *VerticalPodAutoscalerListerMock) Get(name string) (*vpa_types.VerticalP
 	return nil, fmt.Errorf("unimplemented")
 }
 
-// MultidimPodAutoscalerListerMock is a mock of MultidimPodAutoscalerLister or
-// MultidimPodAutoscalerNamespaceLister - the crucial List method is the same.
-type MultidimPodAutoscalerListerMock struct {
-	mock.Mock
-}
-
-// List is a mock implementation of MultidimPodAutoscalerLister.List
-func (m *MultidimPodAutoscalerListerMock) List(selector labels.Selector) (ret []*mpa_types.MultidimPodAutoscaler, err error) {
-	args := m.Called()
-	var returnArg []*mpa_types.MultidimPodAutoscaler
-	if args.Get(0) != nil {
-		returnArg = args.Get(0).([]*mpa_types.MultidimPodAutoscaler)
-	}
-	return returnArg, args.Error(1)
-}
-
-// MultidimPodAutoscalers is a mock implementation of returning a lister for namespace.
-func (m *MultidimPodAutoscalerListerMock) MultidimPodAutoscalers(namespace string) mpa_lister.MultidimPodAutoscalerNamespaceLister {
-	args := m.Called(namespace)
-	var returnArg mpa_lister.MultidimPodAutoscalerNamespaceLister
-	if args.Get(0) != nil {
-		returnArg = args.Get(0).(mpa_lister.MultidimPodAutoscalerNamespaceLister)
-	}
-	return returnArg
-}
-
-// Get is not implemented for this mock
-func (m *MultidimPodAutoscalerListerMock) Get(name string) (*mpa_types.MultidimPodAutoscaler, error) {
-	return nil, fmt.Errorf("unimplemented")
-}
-
 // VerticalPodAutoscalerV1Beta1ListerMock is a mock of VerticalPodAutoscalerLister or
 // VerticalPodAutoscalerNamespaceLister - the crucial List method is the same.
 type VerticalPodAutoscalerV1Beta1ListerMock struct {
@@ -269,7 +236,7 @@ type RecommendationProcessorMock struct {
 // Apply is a mock implementation of RecommendationProcessor.Apply
 func (m *RecommendationProcessorMock) Apply(podRecommendation *vpa_types.RecommendedPodResources,
 	policy *vpa_types.PodResourcePolicy,
-	conditions []mpa_types.MultidimPodAutoscalerCondition,
+	conditions []vpa_types.VerticalPodAutoscalerCondition,
 	pod *apiv1.Pod) (*vpa_types.RecommendedPodResources, map[string][]string, error) {
 	args := m.Called()
 	var returnArg *vpa_types.RecommendedPodResources
@@ -289,7 +256,7 @@ type FakeRecommendationProcessor struct{}
 // Apply is a dummy implementation of RecommendationProcessor.Apply which returns provided podRecommendation
 func (f *FakeRecommendationProcessor) Apply(podRecommendation *vpa_types.RecommendedPodResources,
 	policy *vpa_types.PodResourcePolicy,
-	conditions []mpa_types.MultidimPodAutoscalerCondition,
+	conditions []vpa_types.VerticalPodAutoscalerCondition,
 	pod *apiv1.Pod) (*vpa_types.RecommendedPodResources, map[string][]string, error) {
 	return podRecommendation, nil, nil
 }
