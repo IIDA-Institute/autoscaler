@@ -22,12 +22,12 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	v1 "k8s.io/api/admission/v1"
+	"k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/mpa"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/vpa"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange"
 	metrics_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/admission"
 	"k8s.io/klog/v2"
@@ -41,13 +41,13 @@ type AdmissionServer struct {
 
 // NewAdmissionServer constructs new AdmissionServer
 func NewAdmissionServer(podPreProcessor pod.PreProcessor,
-	mpaPreProcessor mpa.PreProcessor,
+	vpaPreProcessor vpa.PreProcessor,
 	limitsChecker limitrange.LimitRangeCalculator,
-	mpaMatcher mpa.Matcher,
+	vpaMatcher vpa.Matcher,
 	patchCalculators []patch.Calculator) *AdmissionServer {
 	as := &AdmissionServer{limitsChecker, map[metav1.GroupResource]resource.Handler{}}
-	as.RegisterResourceHandler(pod.NewResourceHandler(podPreProcessor, mpaMatcher, patchCalculators))
-	as.RegisterResourceHandler(mpa.NewResourceHandler(mpaPreProcessor))
+	as.RegisterResourceHandler(pod.NewResourceHandler(podPreProcessor, vpaMatcher, patchCalculators))
+	as.RegisterResourceHandler(vpa.NewResourceHandler(vpaPreProcessor))
 	return as
 }
 

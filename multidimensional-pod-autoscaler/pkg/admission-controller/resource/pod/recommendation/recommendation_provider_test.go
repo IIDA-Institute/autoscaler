@@ -23,9 +23,12 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
+	vpa_test "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 
 	"github.com/stretchr/testify/assert"
@@ -55,65 +58,65 @@ func TestUpdateResourceRequests(t *testing.T) {
 	containerName := "container1"
 	vpaName := "vpa1"
 	labels := map[string]string{"app": "testingApp"}
-	vpaBuilder := test.VerticalPodAutoscaler().
+	mpaBuilder := test.MultidimPodAutoscaler().
 		WithName(vpaName).
 		WithContainer(containerName).
 		WithTarget("2", "200Mi").
 		WithMinAllowed("1", "100Mi").
 		WithMaxAllowed("3", "1Gi")
-	vpa := vpaBuilder.Get()
+	mpa := mpaBuilder.Get()
 
-	uninitialized := test.Pod().WithName("test_uninitialized").
+	uninitialized := vpa_test.Pod().WithName("test_uninitialized").
 		AddContainer(test.Container().WithName(containerName).Get()).
 		WithLabels(labels).Get()
 
 	initializedContainer := test.Container().WithName(containerName).
 		WithCPURequest(resource.MustParse("2")).WithMemRequest(resource.MustParse("100Mi")).Get()
-	initialized := test.Pod().WithName("test_initialized").
+	initialized := vpa_test.Pod().WithName("test_initialized").
 		AddContainer(initializedContainer).WithLabels(labels).Get()
 
 	limitsMatchRequestsContainer := test.Container().WithName(containerName).
 		WithCPURequest(resource.MustParse("2")).WithCPULimit(resource.MustParse("2")).
 		WithMemRequest(resource.MustParse("200Mi")).WithMemLimit(resource.MustParse("200Mi")).Get()
-	limitsMatchRequestsPod := test.Pod().WithName("test_initialized").
+	limitsMatchRequestsPod := vpa_test.Pod().WithName("test_initialized").
 		AddContainer(limitsMatchRequestsContainer).WithLabels(labels).Get()
 
 	containerWithDoubleLimit := test.Container().WithName(containerName).
 		WithCPURequest(resource.MustParse("1")).WithCPULimit(resource.MustParse("2")).
 		WithMemRequest(resource.MustParse("100Mi")).WithMemLimit(resource.MustParse("200Mi")).Get()
-	podWithDoubleLimit := test.Pod().WithName("test_initialized").
+	podWithDoubleLimit := vpa_test.Pod().WithName("test_initialized").
 		AddContainer(containerWithDoubleLimit).WithLabels(labels).Get()
 
 	containerWithTenfoldLimit := test.Container().WithName(containerName).
 		WithCPURequest(resource.MustParse("1")).WithCPULimit(resource.MustParse("10")).
 		WithMemRequest(resource.MustParse("100Mi")).WithMemLimit(resource.MustParse("1000Mi")).Get()
-	podWithTenfoldLimit := test.Pod().WithName("test_initialized").
+	podWithTenfoldLimit := vpa_test.Pod().WithName("test_initialized").
 		AddContainer(containerWithTenfoldLimit).WithLabels(labels).Get()
 
 	limitsNoRequestsContainer := test.Container().WithName(containerName).
 		WithCPULimit(resource.MustParse("2")).WithMemLimit(resource.MustParse("200Mi")).Get()
-	limitsNoRequestsPod := test.Pod().WithName("test_initialized").
+	limitsNoRequestsPod := vpa_test.Pod().WithName("test_initialized").
 		AddContainer(limitsNoRequestsContainer).WithLabels(labels).Get()
 
-	targetBelowMinVPA := vpaBuilder.WithTarget("3", "150Mi").WithMinAllowed("4", "300Mi").WithMaxAllowed("5", "1Gi").Get()
-	targetAboveMaxVPA := vpaBuilder.WithTarget("7", "2Gi").WithMinAllowed("4", "300Mi").WithMaxAllowed("5", "1Gi").Get()
-	vpaWithHighMemory := vpaBuilder.WithTarget("2", "1000Mi").WithMaxAllowed("3", "3Gi").Get()
-	vpaWithExabyteRecommendation := vpaBuilder.WithTarget("1Ei", "1Ei").WithMaxAllowed("1Ei", "1Ei").Get()
+	targetBelowMinVPA := mpaBuilder.WithTarget("3", "150Mi").WithMinAllowed("4", "300Mi").WithMaxAllowed("5", "1Gi").Get()
+	targetAboveMaxVPA := mpaBuilder.WithTarget("7", "2Gi").WithMinAllowed("4", "300Mi").WithMaxAllowed("5", "1Gi").Get()
+	vpaWithHighMemory := mpaBuilder.WithTarget("2", "1000Mi").WithMaxAllowed("3", "3Gi").Get()
+	vpaWithExabyteRecommendation := mpaBuilder.WithTarget("1Ei", "1Ei").WithMaxAllowed("1Ei", "1Ei").Get()
 
-	resourceRequestsAndLimitsVPA := vpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsAndLimits).Get()
-	resourceRequestsOnlyVPA := vpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsOnly).Get()
-	resourceRequestsOnlyVPAHighTarget := vpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsOnly).
+	resourceRequestsAndLimitsVPA := mpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsAndLimits).Get()
+	resourceRequestsOnlyVPA := mpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsOnly).Get()
+	resourceRequestsOnlyVPAHighTarget := mpaBuilder.WithControlledValues(vpa_types.ContainerControlledValuesRequestsOnly).
 		WithTarget("3", "500Mi").WithMaxAllowed("5", "1Gi").Get()
 
-	vpaWithEmptyRecommendation := vpaBuilder.Get()
+	vpaWithEmptyRecommendation := mpaBuilder.Get()
 	vpaWithEmptyRecommendation.Status.Recommendation = &vpa_types.RecommendedPodResources{}
-	vpaWithNilRecommendation := vpaBuilder.Get()
+	vpaWithNilRecommendation := mpaBuilder.Get()
 	vpaWithNilRecommendation.Status.Recommendation = nil
 
 	testCases := []struct {
 		name              string
 		pod               *apiv1.Pod
-		vpa               *vpa_types.VerticalPodAutoscaler
+		mpa               *mpa_types.MultidimPodAutoscaler
 		expectedAction    bool
 		expectedError     error
 		expectedMem       resource.Quantity
@@ -127,7 +130,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "uninitialized pod",
 			pod:            uninitialized,
-			vpa:            vpa,
+			mpa:            mpa,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("200Mi"),
 			expectedCPU:    resource.MustParse("2"),
@@ -135,7 +138,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "target below min",
 			pod:            uninitialized,
-			vpa:            targetBelowMinVPA,
+			mpa:            targetBelowMinVPA,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("300Mi"), // MinMemory is expected to be used
 			expectedCPU:    resource.MustParse("4"),     // MinCpu is expected to be used
@@ -146,7 +149,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "target above max",
 			pod:            uninitialized,
-			vpa:            targetAboveMaxVPA,
+			mpa:            targetAboveMaxVPA,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("1Gi"), // MaxMemory is expected to be used
 			expectedCPU:    resource.MustParse("5"),   // MaxCpu is expected to be used
@@ -157,7 +160,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "initialized pod",
 			pod:            initialized,
-			vpa:            vpa,
+			mpa:            mpa,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("200Mi"),
 			expectedCPU:    resource.MustParse("2"),
@@ -165,7 +168,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "high memory",
 			pod:            initialized,
-			vpa:            vpaWithHighMemory,
+			mpa:            vpaWithHighMemory,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("1000Mi"),
 			expectedCPU:    resource.MustParse("2"),
@@ -173,7 +176,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "empty recommendation",
 			pod:            initialized,
-			vpa:            vpaWithEmptyRecommendation,
+			mpa:            vpaWithEmptyRecommendation,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("0"),
 			expectedCPU:    resource.MustParse("0"),
@@ -181,7 +184,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "nil recommendation",
 			pod:            initialized,
-			vpa:            vpaWithNilRecommendation,
+			mpa:            vpaWithNilRecommendation,
 			expectedAction: true,
 			expectedMem:    resource.MustParse("0"),
 			expectedCPU:    resource.MustParse("0"),
@@ -189,7 +192,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "guaranteed resources",
 			pod:              limitsMatchRequestsPod,
-			vpa:              vpa,
+			mpa:              mpa,
 			expectedAction:   true,
 			expectedMem:      resource.MustParse("200Mi"),
 			expectedCPU:      resource.MustParse("2"),
@@ -199,7 +202,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "guaranteed resources - no request",
 			pod:              limitsNoRequestsPod,
-			vpa:              vpa,
+			mpa:              mpa,
 			expectedAction:   true,
 			expectedMem:      resource.MustParse("200Mi"),
 			expectedCPU:      resource.MustParse("2"),
@@ -209,7 +212,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "proportional limit - as default",
 			pod:              podWithDoubleLimit,
-			vpa:              vpa,
+			mpa:              mpa,
 			expectedAction:   true,
 			expectedCPU:      resource.MustParse("2"),
 			expectedMem:      resource.MustParse("200Mi"),
@@ -219,7 +222,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "proportional limit - set explicit",
 			pod:              podWithDoubleLimit,
-			vpa:              resourceRequestsAndLimitsVPA,
+			mpa:              resourceRequestsAndLimitsVPA,
 			expectedAction:   true,
 			expectedCPU:      resource.MustParse("2"),
 			expectedMem:      resource.MustParse("200Mi"),
@@ -229,7 +232,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "disabled limit scaling",
 			pod:            podWithDoubleLimit,
-			vpa:            resourceRequestsOnlyVPA,
+			mpa:            resourceRequestsOnlyVPA,
 			expectedAction: true,
 			expectedCPU:    resource.MustParse("2"),
 			expectedMem:    resource.MustParse("200Mi"),
@@ -237,7 +240,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:           "disabled limit scaling - requests capped at limit",
 			pod:            podWithDoubleLimit,
-			vpa:            resourceRequestsOnlyVPAHighTarget,
+			mpa:            resourceRequestsOnlyVPAHighTarget,
 			expectedAction: true,
 			expectedCPU:    resource.MustParse("2"),
 			expectedMem:    resource.MustParse("200Mi"),
@@ -251,7 +254,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "limit over int64",
 			pod:              podWithTenfoldLimit,
-			vpa:              vpaWithExabyteRecommendation,
+			mpa:              vpaWithExabyteRecommendation,
 			expectedAction:   true,
 			expectedCPU:      resource.MustParse("1Ei"),
 			expectedMem:      resource.MustParse("1Ei"),
@@ -267,7 +270,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:              "limit range calculation error",
 			pod:               initialized,
-			vpa:               vpa,
+			mpa:               mpa,
 			limitRangeCalcErr: fmt.Errorf("oh no"),
 			expectedAction:    false,
 			expectedError:     fmt.Errorf("error getting containerLimitRange: oh no"),
@@ -275,7 +278,7 @@ func TestUpdateResourceRequests(t *testing.T) {
 		{
 			name:             "proportional limit from default",
 			pod:              initialized,
-			vpa:              vpa,
+			mpa:              mpa,
 			expectedAction:   true,
 			expectedCPU:      resource.MustParse("2"),
 			expectedMem:      resource.MustParse("200Mi"),
@@ -294,14 +297,14 @@ func TestUpdateResourceRequests(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			recommendationProvider := &recommendationProvider{
-				recommendationProcessor: vpa_api_util.NewCappingRecommendationProcessor(limitrange.NewNoopLimitsCalculator()),
+				recommendationProcessor: mpa_api_util.NewCappingRecommendationProcessor(limitrange.NewNoopLimitsCalculator()),
 				limitsRangeCalculator: &fakeLimitRangeCalculator{
 					containerLimitRange: tc.limitRange,
 					containerErr:        tc.limitRangeCalcErr,
 				},
 			}
 
-			resources, annotations, err := recommendationProvider.GetContainersResourcesForPod(tc.pod, tc.vpa)
+			resources, annotations, err := recommendationProvider.GetContainersResourcesForPod(tc.pod, tc.mpa)
 
 			if tc.expectedAction {
 				assert.Nil(t, err)

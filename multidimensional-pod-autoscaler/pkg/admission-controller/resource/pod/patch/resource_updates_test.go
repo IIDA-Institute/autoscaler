@@ -23,9 +23,9 @@ import (
 
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	resource_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 
 	"github.com/stretchr/testify/assert"
@@ -44,7 +44,7 @@ type fakeRecommendationProvider struct {
 	e                      error
 }
 
-func (frp *fakeRecommendationProvider) GetContainersResourcesForPod(pod *core.Pod, vpa *vpa_types.VerticalPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error) {
+func (frp *fakeRecommendationProvider) GetContainersResourcesForPod(pod *core.Pod, mpa *mpa_types.MultidimPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error) {
 	return frp.resources, frp.containerToAnnotations, frp.e
 }
 
@@ -253,7 +253,7 @@ func TestClalculatePatches_ResourceUpdates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			frp := fakeRecommendationProvider{tc.recommendResources, tc.recommendAnnotations, tc.recommendError}
 			c := NewResourceUpdatesCalculator(&frp)
-			patches, err := c.CalculatePatches(tc.pod, test.VerticalPodAutoscaler().WithContainer("test").WithName("name").Get())
+			patches, err := c.CalculatePatches(tc.pod, test.MultidimPodAutoscaler().WithContainer("test").WithName("name").Get())
 			if tc.expectError == nil {
 				assert.NoError(t, err)
 			} else {
@@ -295,7 +295,7 @@ func TestGetPatches_TwoReplacementResources(t *testing.T) {
 	recommendAnnotations := vpa_api_util.ContainerToAnnotationsMap{}
 	frp := fakeRecommendationProvider{recommendResources, recommendAnnotations, nil}
 	c := NewResourceUpdatesCalculator(&frp)
-	patches, err := c.CalculatePatches(pod, test.VerticalPodAutoscaler().WithName("name").WithContainer("test").Get())
+	patches, err := c.CalculatePatches(pod, test.MultidimPodAutoscaler().WithName("name").WithContainer("test").Get())
 	assert.NoError(t, err)
 	// Order of updates for cpu and unobtanium depends on order of iterating a map, both possible results are valid.
 	if assert.Len(t, patches, 3, "unexpected number of patches") {

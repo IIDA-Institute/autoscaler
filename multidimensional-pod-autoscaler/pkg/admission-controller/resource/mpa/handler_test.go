@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vpa
+package mpa
 
 import (
 	"fmt"
@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
@@ -43,47 +44,51 @@ func TestValidateVPA(t *testing.T) {
 	controlledValuesRequestsAndLimits := vpa_types.ContainerControlledValuesRequestsAndLimits
 	tests := []struct {
 		name        string
-		vpa         vpa_types.VerticalPodAutoscaler
+		mpa         mpa_types.MultidimPodAutoscaler
 		isCreate    bool
 		expectError error
 	}{
 		{
 			name: "empty update",
-			vpa:  vpa_types.VerticalPodAutoscaler{},
+			mpa:  mpa_types.MultidimPodAutoscaler{},
 		},
 		{
 			name:        "empty create",
-			vpa:         vpa_types.VerticalPodAutoscaler{},
+			mpa:         mpa_types.MultidimPodAutoscaler{},
 			isCreate:    true,
-			expectError: fmt.Errorf("TargetRef is required. If you're using v1beta1 version of the API, please migrate to v1"),
+			expectError: fmt.Errorf("ScaleTargetRef is required."),
 		},
 		{
 			name: "no update mode",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
-					UpdatePolicy: &vpa_types.PodUpdatePolicy{},
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
+					UpdatePolicy: &mpa_types.PodUpdatePolicy{},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("UpdateMode is required if UpdatePolicy is used"),
 		},
 		{
 			name: "bad update mode",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
-					UpdatePolicy: &vpa_types.PodUpdatePolicy{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
+					UpdatePolicy: &mpa_types.PodUpdatePolicy{
 						UpdateMode: &badUpdateMode,
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("unexpected UpdateMode value bad"),
 		},
 		{
 			name: "zero minReplicas",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
-					UpdatePolicy: &vpa_types.PodUpdatePolicy{
-						MinReplicas: &badMinReplicas,
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
+					UpdatePolicy: &mpa_types.PodUpdatePolicy{
 						UpdateMode:  &validUpdateMode,
+					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{
+						MinReplicas: &badMinReplicas,
 					},
 				},
 			},
@@ -91,19 +96,20 @@ func TestValidateVPA(t *testing.T) {
 		},
 		{
 			name: "no policy name",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{{}},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("ContainerPolicies.ContainerName is required"),
 		},
 		{
 			name: "invalid scaling mode",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -112,29 +118,31 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("unexpected Mode value bad"),
 		},
 		{
 			name: "more than one recommender",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
-					UpdatePolicy: &vpa_types.PodUpdatePolicy{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
+					UpdatePolicy: &mpa_types.PodUpdatePolicy{
 						UpdateMode: &validUpdateMode,
 					},
-					Recommenders: []*vpa_types.VerticalPodAutoscalerRecommenderSelector{
+					Recommenders: []*mpa_types.MultidimPodAutoscalerRecommenderSelector{
 						{Name: "test1"},
 						{Name: "test2"},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
-			expectError: fmt.Errorf("The current version of VPA object shouldn't specify more than one recommenders."),
+			expectError: fmt.Errorf("The current version of MPA object shouldn't specify more than one recommenders."),
 		},
 		{
 			name: "bad limits",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -148,14 +156,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("max resource for cpu is lower than min"),
 		},
 		{
 			name: "bad minAllowed cpu value",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -169,14 +178,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("MinAllowed: CPU [%v] must be a whole number of milli CPUs", badCPUResource.String()),
 		},
 		{
 			name: "bad minAllowed memory value",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -192,14 +202,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("MinAllowed: Memory [%v] must be a whole number of bytes", resource.MustParse("100m")),
 		},
 		{
 			name: "bad maxAllowed cpu value",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -211,14 +222,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("MaxAllowed: CPU [%s] must be a whole number of milli CPUs", badCPUResource.String()),
 		},
 		{
 			name: "bad maxAllowed memory value",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -232,14 +244,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("MaxAllowed: Memory [%v] must be a whole number of bytes", resource.MustParse("500m")),
 		},
 		{
 			name: "scaling off with controlled values requests and limits",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -249,14 +262,15 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{},
 				},
 			},
 			expectError: fmt.Errorf("ControlledValues shouldn't be specified if container scaling mode is off."),
 		},
 		{
 			name: "all valid",
-			vpa: vpa_types.VerticalPodAutoscaler{
-				Spec: vpa_types.VerticalPodAutoscalerSpec{
+			mpa: mpa_types.MultidimPodAutoscaler{
+				Spec: mpa_types.MultidimPodAutoscalerSpec{
 					ResourcePolicy: &vpa_types.PodResourcePolicy{
 						ContainerPolicies: []vpa_types.ContainerResourcePolicy{
 							{
@@ -271,8 +285,10 @@ func TestValidateVPA(t *testing.T) {
 							},
 						},
 					},
-					UpdatePolicy: &vpa_types.PodUpdatePolicy{
+					UpdatePolicy: &mpa_types.PodUpdatePolicy{
 						UpdateMode:  &validUpdateMode,
+					},
+					Constraints: &mpa_types.HorizontalScalingConstraints{
 						MinReplicas: &validMinReplicas,
 					},
 				},
@@ -281,7 +297,7 @@ func TestValidateVPA(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("test case: %s", tc.name), func(t *testing.T) {
-			err := ValidateVPA(&tc.vpa, tc.isCreate)
+			err := ValidateMPA(&tc.mpa, tc.isCreate)
 			if tc.expectError == nil {
 				assert.NoError(t, err)
 			} else {

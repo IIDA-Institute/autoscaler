@@ -20,8 +20,6 @@ import (
 	"fmt"
 
 	core "k8s.io/api/core/v1"
-	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
-	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
@@ -30,17 +28,17 @@ import (
 
 // Provider gets current recommendation, annotations and vpaName for the given pod.
 type Provider interface {
-	GetContainersResourcesForPod(pod *core.Pod, mpa *mpa_types.MultidimPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error)
+	GetContainersResourcesForPod(pod *core.Pod, vpa *vpa_types.VerticalPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error)
 }
 
 type recommendationProvider struct {
 	limitsRangeCalculator   limitrange.LimitRangeCalculator
-	recommendationProcessor mpa_api_util.RecommendationProcessor
+	recommendationProcessor vpa_api_util.RecommendationProcessor
 }
 
 // NewProvider constructs the recommendation provider that can be used to determine recommendations for pods.
 func NewProvider(calculator limitrange.LimitRangeCalculator,
-	recommendationProcessor mpa_api_util.RecommendationProcessor) Provider {
+	recommendationProcessor vpa_api_util.RecommendationProcessor) Provider {
 	return &recommendationProvider{
 		limitsRangeCalculator:   calculator,
 		recommendationProcessor: recommendationProcessor,
@@ -84,9 +82,9 @@ func GetContainersResources(pod *core.Pod, vpaResourcePolicy *vpa_types.PodResou
 
 // GetContainersResourcesForPod returns recommended request for a given pod and associated annotations.
 // The returned slice corresponds 1-1 to containers in the Pod.
-func (p *recommendationProvider) GetContainersResourcesForPod(pod *core.Pod, mpa *mpa_types.MultidimPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error) {
-	if mpa == nil || pod == nil {
-		klog.V(2).Infof("can't calculate recommendations, one of vpa(%+v), pod(%+v) is nil", mpa, pod)
+func (p *recommendationProvider) GetContainersResourcesForPod(pod *core.Pod, vpa *vpa_types.VerticalPodAutoscaler) ([]vpa_api_util.ContainerResources, vpa_api_util.ContainerToAnnotationsMap, error) {
+	if vpa == nil || pod == nil {
+		klog.V(2).Infof("can't calculate recommendations, one of vpa(%+v), pod(%+v) is nil", vpa, pod)
 		return nil, nil, nil
 	}
 	klog.V(2).Infof("updating requirements for pod %s.", pod.Name)
@@ -94,9 +92,9 @@ func (p *recommendationProvider) GetContainersResourcesForPod(pod *core.Pod, mpa
 	var annotations vpa_api_util.ContainerToAnnotationsMap
 	recommendedPodResources := &vpa_types.RecommendedPodResources{}
 
-	if mpa.Status.Recommendation != nil {
+	if vpa.Status.Recommendation != nil {
 		var err error
-		recommendedPodResources, annotations, err = p.recommendationProcessor.Apply(mpa.Status.Recommendation, mpa.Spec.ResourcePolicy, mpa.Status.Conditions, pod)
+		recommendedPodResources, annotations, err = p.recommendationProcessor.Apply(vpa.Status.Recommendation, vpa.Spec.ResourcePolicy, vpa.Status.Conditions, pod)
 		if err != nil {
 			klog.V(2).Infof("cannot process recommendation for pod %s", pod.Name)
 			return nil, annotations, err
@@ -107,8 +105,8 @@ func (p *recommendationProvider) GetContainersResourcesForPod(pod *core.Pod, mpa
 		return nil, nil, fmt.Errorf("error getting containerLimitRange: %s", err)
 	}
 	var resourcePolicy *vpa_types.PodResourcePolicy
-	if mpa.Spec.UpdatePolicy == nil || mpa.Spec.UpdatePolicy.UpdateMode == nil || *mpa.Spec.UpdatePolicy.UpdateMode != vpa_types.UpdateModeOff {
-		resourcePolicy = mpa.Spec.ResourcePolicy
+	if vpa.Spec.UpdatePolicy == nil || vpa.Spec.UpdatePolicy.UpdateMode == nil || *vpa.Spec.UpdatePolicy.UpdateMode != vpa_types.UpdateModeOff {
+		resourcePolicy = vpa.Spec.ResourcePolicy
 	}
 	containerResources := GetContainersResources(pod, resourcePolicy, *recommendedPodResources, containerLimitRange, false, annotations)
 	return containerResources, annotations, nil

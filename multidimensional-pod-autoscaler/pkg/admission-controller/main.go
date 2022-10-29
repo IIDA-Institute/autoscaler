@@ -24,19 +24,19 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/logic"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/recommendation"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/vpa"
-	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/common"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/logic"
+	mpa "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/mpa"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/recommendation"
+	mpa_clientset "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/client/clientset/versioned"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/target"
+	mpa_api_util "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/mpa"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/limitrange"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/admission"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/status"
-	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
 	kube_flag "k8s.io/component-base/cli/flag"
@@ -61,19 +61,19 @@ var (
 	kubeApiQps         = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
 	kubeApiBurst       = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
 	namespace          = os.Getenv("NAMESPACE")
-	serviceName        = flag.String("webhook-service", "vpa-webhook", "Kubernetes service under which webhook is registered. Used when registerByURL is set to false.")
+	serviceName        = flag.String("webhook-service", "mpa-webhook", "Kubernetes service under which webhook is registered. Used when registerByURL is set to false.")
 	webhookAddress     = flag.String("webhook-address", "", "Address under which webhook is registered. Used when registerByURL is set to true.")
 	webhookPort        = flag.String("webhook-port", "", "Server Port for Webhook")
 	webhookTimeout     = flag.Int("webhook-timeout-seconds", 30, "Timeout in seconds that the API server should wait for this webhook to respond before failing.")
 	registerWebhook    = flag.Bool("register-webhook", true, "If set to true, admission webhook object will be created on start up to register with the API server.")
 	registerByURL      = flag.Bool("register-by-url", false, "If set to true, admission webhook will be registered by URL (webhookAddress:webhookPort) instead of by service name")
-	vpaObjectNamespace = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects. Empty means all namespaces will be used.")
+	mpaObjectNamespace = flag.String("mpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for MPA objects. Empty means all namespaces will be used.")
 )
 
 func main() {
 	klog.InitFlags(nil)
 	kube_flag.InitFlags()
-	klog.V(1).Infof("Vertical Pod Autoscaler %s Admission Controller", common.VerticalPodAutoscalerVersion)
+	klog.V(1).Infof("Multi-dimensional Pod Autoscaler %s Admission Controller", common.MultidimPodAutoscalerVersion)
 
 	healthCheck := metrics.NewHealthCheck(time.Minute, false)
 	metrics.Initialize(*address, healthCheck)
@@ -82,21 +82,21 @@ func main() {
 	certs := initCerts(*certsConfiguration)
 	config := common.CreateKubeConfigOrDie(*kubeconfig, float32(*kubeApiQps), int(*kubeApiBurst))
 
-	vpaClient := vpa_clientset.NewForConfigOrDie(config)
-	vpaLister := vpa_api_util.NewVpasLister(vpaClient, make(chan struct{}), *vpaObjectNamespace)
+	mpaClient := mpa_clientset.NewForConfigOrDie(config)
+	mpaLister := mpa_api_util.NewMpasLister(mpaClient, make(chan struct{}), *mpaObjectNamespace)
 	kubeClient := kube_client.NewForConfigOrDie(config)
 	factory := informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod)
-	targetSelectorFetcher := target.NewVpaTargetSelectorFetcher(config, kubeClient, factory)
+	targetSelectorFetcher := target.NewMpaTargetSelectorFetcher(config, kubeClient, factory)
 	podPreprocessor := pod.NewDefaultPreProcessor()
-	vpaPreprocessor := vpa.NewDefaultPreProcessor()
+	mpaPreprocessor := mpa.NewDefaultPreProcessor()
 	var limitRangeCalculator limitrange.LimitRangeCalculator
 	limitRangeCalculator, err := limitrange.NewLimitsRangeCalculator(factory)
 	if err != nil {
 		klog.Errorf("Failed to create limitRangeCalculator, falling back to not checking limits. Error message: %s", err)
 		limitRangeCalculator = limitrange.NewNoopLimitsCalculator()
 	}
-	recommendationProvider := recommendation.NewProvider(limitRangeCalculator, vpa_api_util.NewCappingRecommendationProcessor(limitRangeCalculator))
-	vpaMatcher := vpa.NewMatcher(vpaLister, targetSelectorFetcher)
+	recommendationProvider := recommendation.NewProvider(limitRangeCalculator, mpa_api_util.NewCappingRecommendationProcessor(limitRangeCalculator))
+	vpaMatcher := mpa.NewMatcher(mpaLister, targetSelectorFetcher)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -118,7 +118,7 @@ func main() {
 	defer close(stopCh)
 
 	calculators := []patch.Calculator{patch.NewResourceUpdatesCalculator(recommendationProvider), patch.NewObservedContainersCalculator()}
-	as := logic.NewAdmissionServer(podPreprocessor, vpaPreprocessor, limitRangeCalculator, vpaMatcher, calculators)
+	as := logic.NewAdmissionServer(podPreprocessor, mpaPreprocessor, limitRangeCalculator, vpaMatcher, calculators)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		as.Serve(w, r)
 		healthCheck.UpdateLastActivity()

@@ -22,9 +22,9 @@ import (
 
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/recommendation"
-	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
 	resource_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/recommendation"
+	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 )
 
@@ -46,10 +46,10 @@ func NewResourceUpdatesCalculator(recommendationProvider recommendation.Provider
 	}
 }
 
-func (c *resourcesUpdatesPatchCalculator) CalculatePatches(pod *core.Pod, mpa *mpa_types.MultidimPodAutoscaler) ([]resource_admission.PatchRecord, error) {
+func (c *resourcesUpdatesPatchCalculator) CalculatePatches(pod *core.Pod, vpa *vpa_types.VerticalPodAutoscaler) ([]resource_admission.PatchRecord, error) {
 	result := []resource_admission.PatchRecord{}
 
-	containersResources, annotationsPerContainer, err := c.recommendationProvider.GetContainersResourcesForPod(pod, mpa)
+	containersResources, annotationsPerContainer, err := c.recommendationProvider.GetContainersResourcesForPod(pod, vpa)
 	if err != nil {
 		return []resource_admission.PatchRecord{}, fmt.Errorf("Failed to calculate resource patch for pod %v/%v: %v", pod.Namespace, pod.Name, err)
 	}
@@ -66,7 +66,7 @@ func (c *resourcesUpdatesPatchCalculator) CalculatePatches(pod *core.Pod, mpa *m
 	}
 
 	if len(updatesAnnotation) > 0 {
-		vpaAnnotationValue := fmt.Sprintf("Pod resources updated by %s: %s", mpa.Name, strings.Join(updatesAnnotation, "; "))
+		vpaAnnotationValue := fmt.Sprintf("Pod resources updated by %s: %s", vpa.Name, strings.Join(updatesAnnotation, "; "))
 		result = append(result, GetAddAnnotationPatch(ResourceUpdatesAnnotation, vpaAnnotationValue))
 	}
 	return result, nil

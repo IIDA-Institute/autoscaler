@@ -23,9 +23,9 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/mpa"
-	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
 	resource_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/vpa"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/admission"
 	"k8s.io/klog/v2"
 )
@@ -33,15 +33,15 @@ import (
 // resourceHandler builds patches for Pods.
 type resourceHandler struct {
 	preProcessor     PreProcessor
-	mpaMatcher       mpa.Matcher
+	vpaMatcher       vpa.Matcher
 	patchCalculators []patch.Calculator
 }
 
 // NewResourceHandler creates new instance of resourceHandler.
-func NewResourceHandler(preProcessor PreProcessor, mpaMatcher mpa.Matcher, patchCalculators []patch.Calculator) resource_admission.Handler {
+func NewResourceHandler(preProcessor PreProcessor, vpaMatcher vpa.Matcher, patchCalculators []patch.Calculator) resource_admission.Handler {
 	return &resourceHandler{
 		preProcessor:     preProcessor,
-		mpaMatcher:       mpaMatcher,
+		vpaMatcher:       vpaMatcher,
 		patchCalculators: patchCalculators,
 	}
 }
@@ -77,9 +77,9 @@ func (h *resourceHandler) GetPatches(ar *admissionv1.AdmissionRequest) ([]resour
 		pod.Namespace = namespace
 	}
 	klog.V(4).Infof("Admitting pod %v", pod.ObjectMeta)
-	controllingMpa := h.mpaMatcher.GetMatchingMPA(&pod)
-	if controllingMpa == nil {
-		klog.V(4).Infof("No matching MPA found for pod %s/%s", pod.Namespace, pod.Name)
+	controllingVpa := h.vpaMatcher.GetMatchingVPA(&pod)
+	if controllingVpa == nil {
+		klog.V(4).Infof("No matching VPA found for pod %s/%s", pod.Namespace, pod.Name)
 		return []resource_admission.PatchRecord{}, nil
 	}
 	pod, err := h.preProcessor.Process(pod)
@@ -92,7 +92,7 @@ func (h *resourceHandler) GetPatches(ar *admissionv1.AdmissionRequest) ([]resour
 		patches = append(patches, patch.GetAddEmptyAnnotationsPatch())
 	}
 	for _, c := range h.patchCalculators {
-		partialPatches, err := c.CalculatePatches(&pod, controllingMpa)
+		partialPatches, err := c.CalculatePatches(&pod, controllingVpa)
 		if err != nil {
 			return []resource_admission.PatchRecord{}, err
 		}

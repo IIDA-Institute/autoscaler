@@ -25,10 +25,10 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
+	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
+	"k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/utils/test"
 	resource_admission "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource/pod/patch"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 )
 
 type fakePodPreProcessor struct {
@@ -39,12 +39,12 @@ func (fpp *fakePodPreProcessor) Process(pod apiv1.Pod) (apiv1.Pod, error) {
 	return pod, fpp.err
 }
 
-type fakeVpaMatcher struct {
-	vpa *vpa_types.VerticalPodAutoscaler
+type fakeMpaMatcher struct {
+	mpa *mpa_types.MultidimPodAutoscaler
 }
 
-func (m *fakeVpaMatcher) GetMatchingVPA(_ *apiv1.Pod) *vpa_types.VerticalPodAutoscaler {
-	return m.vpa
+func (m *fakeMpaMatcher) GetMatchingMPA(_ *apiv1.Pod) *mpa_types.MultidimPodAutoscaler {
+	return m.mpa
 }
 
 type fakePatchCalculator struct {
@@ -52,13 +52,13 @@ type fakePatchCalculator struct {
 	err     error
 }
 
-func (c *fakePatchCalculator) CalculatePatches(_ *apiv1.Pod, _ *vpa_types.VerticalPodAutoscaler) (
+func (c *fakePatchCalculator) CalculatePatches(_ *apiv1.Pod, _ *mpa_types.MultidimPodAutoscaler) (
 	[]resource_admission.PatchRecord, error) {
 	return c.patches, c.err
 }
 
 func TestGetPatches(t *testing.T) {
-	testVpa := test.VerticalPodAutoscaler().WithName("name").WithContainer("testy-container").Get()
+	testMpa := test.MultidimPodAutoscaler().WithName("name").WithContainer("testy-container").Get()
 	testPatchRecord := resource_admission.PatchRecord{
 		Op:    "add",
 		Path:  "some/path",
@@ -73,7 +73,7 @@ func TestGetPatches(t *testing.T) {
 		name                 string
 		podJson              []byte
 		namespace            string
-		vpa                  *vpa_types.VerticalPodAutoscaler
+		mpa                  *mpa_types.MultidimPodAutoscaler
 		podPreProcessorError error
 		calculators          []patch.Calculator
 		expectPatches        []resource_admission.PatchRecord
@@ -83,7 +83,7 @@ func TestGetPatches(t *testing.T) {
 			name:                 "invalid JSON",
 			podJson:              []byte("{"),
 			namespace:            "default",
-			vpa:                  testVpa,
+			mpa:                  testMpa,
 			podPreProcessorError: nil,
 			expectError:          fmt.Errorf("unexpected end of JSON input"),
 		},
@@ -91,7 +91,7 @@ func TestGetPatches(t *testing.T) {
 			name:                 "invalid pod",
 			podJson:              []byte("{}"),
 			namespace:            "default",
-			vpa:                  testVpa,
+			mpa:                  testMpa,
 			podPreProcessorError: fmt.Errorf("bad pod"),
 			expectError:          fmt.Errorf("bad pod"),
 		},
@@ -99,7 +99,7 @@ func TestGetPatches(t *testing.T) {
 			name:                 "no vpa found",
 			podJson:              []byte("{}"),
 			namespace:            "test",
-			vpa:                  nil,
+			mpa:                  nil,
 			podPreProcessorError: nil,
 			expectError:          nil,
 			expectPatches:        []resource_admission.PatchRecord{},
@@ -108,7 +108,7 @@ func TestGetPatches(t *testing.T) {
 			name:      "calculator returns error",
 			podJson:   []byte("{}"),
 			namespace: "test",
-			vpa:       testVpa,
+			mpa:       testMpa,
 			calculators: []patch.Calculator{&fakePatchCalculator{
 				[]resource_admission.PatchRecord{}, fmt.Errorf("Can't calculate this"),
 			}},
@@ -120,7 +120,7 @@ func TestGetPatches(t *testing.T) {
 			name:      "second calculator returns error",
 			podJson:   []byte("{}"),
 			namespace: "test",
-			vpa:       testVpa,
+			mpa:       testMpa,
 			calculators: []patch.Calculator{
 				&fakePatchCalculator{[]resource_admission.PatchRecord{
 					testPatchRecord,
@@ -136,7 +136,7 @@ func TestGetPatches(t *testing.T) {
 			name:      "patches returned correctly",
 			podJson:   []byte("{}"),
 			namespace: "test",
-			vpa:       testVpa,
+			mpa:       testMpa,
 			calculators: []patch.Calculator{
 				&fakePatchCalculator{[]resource_admission.PatchRecord{
 					testPatchRecord,
@@ -154,7 +154,7 @@ func TestGetPatches(t *testing.T) {
 			name:      "patches returned correctly for multiple calculators",
 			podJson:   []byte("{}"),
 			namespace: "test",
-			vpa:       testVpa,
+			mpa:       testMpa,
 			calculators: []patch.Calculator{
 				&fakePatchCalculator{[]resource_admission.PatchRecord{
 					testPatchRecord,
@@ -174,7 +174,7 @@ func TestGetPatches(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("test case: %s", tc.name), func(t *testing.T) {
 			fppp := &fakePodPreProcessor{tc.podPreProcessorError}
-			fvm := &fakeVpaMatcher{vpa: tc.vpa}
+			fvm := &fakeMpaMatcher{mpa: tc.mpa}
 			h := NewResourceHandler(fppp, fvm, tc.calculators)
 			patches, err := h.GetPatches(&admissionv1.AdmissionRequest{
 				Resource: v1.GroupVersionResource{

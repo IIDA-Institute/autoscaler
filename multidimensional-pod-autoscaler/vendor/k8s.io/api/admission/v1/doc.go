@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,15 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package patch
+// +k8s:deepcopy-gen=package
+// +k8s:protobuf-gen=package
+// +k8s:openapi-gen=false
 
-import (
-	core "k8s.io/api/core/v1"
-	mpa_types "k8s.io/autoscaler/multidimensional-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1alpha1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/admission-controller/resource"
-)
+// +groupName=admission.k8s.io
 
-// Calculator is capable of calculating required patches for pod.
-type Calculator interface {
-	CalculatePatches(pod *core.Pod, mpa *mpa_types.MultidimPodAutoscaler) ([]resource.PatchRecord, error)
-}
+package v1 // import "k8s.io/api/admission/v1"
