@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	webhookConfigName = "vpa-webhook-config"
+	webhookConfigName = "mpa-webhook-config"
 )
 
 func configTLS(serverCert, serverKey []byte) *tls.Config {

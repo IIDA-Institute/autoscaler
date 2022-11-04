@@ -80,6 +80,7 @@ func main() {
 	metrics_admission.Register()
 
 	certs := initCerts(*certsConfiguration)
+	klog.V(4).Infof("Certificates initialized!")
 	config := common.CreateKubeConfigOrDie(*kubeconfig, float32(*kubeApiQps), int(*kubeApiBurst))
 
 	mpaClient := mpa_clientset.NewForConfigOrDie(config)

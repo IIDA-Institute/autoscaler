@@ -19,5 +19,5 @@
 # https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/admission/webhook/gencerts.sh
 set -e
 
-echo "Deleting VPA Admission Controller certs."
-kubectl delete secret --namespace=kube-system vpa-tls-certs
+echo "Deleting MPA Admission Controller certs."
+kubectl delete secret --namespace=kube-system mpa-tls-certs
