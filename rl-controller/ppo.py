@@ -118,14 +118,6 @@ class PPO:
         self.parameter_actor = None
         self.parameter_critic = None
 
-        # for multi-agent control
-        self.event = None
-        self.training_task = None
-        self.training_finished = False
-        self.cpu_shares_other = 0
-
-        self.token = False
-
     # skip update for the policy and critic network
     def disable_update(self):
         self.skip_update = True
