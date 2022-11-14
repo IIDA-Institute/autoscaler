@@ -84,7 +84,7 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 		return fmt.Errorf("failed to query scale subresource for %s: %v", reference, err)
 	}
 	setCondition(mpa, mpa_types.AbleToScale, v1.ConditionTrue, "SucceededGetScale", "the MPA recommender was able to get the target's current scale")
-	klog.V(4).Infof("MPA recommender was able to get the target's current scale = %d", scale.Spec.Replicas)
+	klog.V(4).Infof("MPA recommender was able to get the target's current scale = %d for targetGR %v", scale.Spec.Replicas, targetGR)
 	currentReplicas := scale.Spec.Replicas
 	r.recordInitialRecommendation(currentReplicas, key)
 
@@ -158,25 +158,30 @@ func (r *recommender) ReconcileHorizontalAutoscaling(ctx context.Context, mpaSha
 	}
 
 	if rescale {
-		scale.Spec.Replicas = desiredReplicas
-		klog.V(4).Infof("Updating the number of replicas to %d for MPA %v", desiredReplicas, key)
-		_, err = r.controllerFetcher.Scales(mpa.Namespace).Update(ctx, targetGR, scale, metav1.UpdateOptions{})
-		if err != nil {
-			r.eventRecorder.Eventf(mpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
-			klog.Errorf("%s: FailedRescale - New size: %d; reason: %s; error: %v", v1.EventTypeWarning, desiredReplicas, rescaleReason, err.Error())
-			setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedUpdateScale", "the MPA controller was unable to update the target scale: %v", err)
-			r.setCurrentReplicasInStatus(mpa, currentReplicas)
-			if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
-				klog.Errorf("Error updating MPA status: %v", err.Error())
-				utilruntime.HandleError(err)
-			}
-			return fmt.Errorf("failed to rescale %s: %v", reference, err)
+		// scale.Spec.Replicas = desiredReplicas
+		// klog.V(4).Infof("Updating the number of replicas to %d for MPA %v", desiredReplicas, key)
+		// _, err = r.controllerFetcher.Scales(mpa.Namespace).Update(ctx, targetGR, scale, metav1.UpdateOptions{})
+		r.setCurrentReplicasInStatus(mpa, currentReplicas)
+		if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+			klog.Errorf("Error updating MPA status: %v", err.Error())
+			utilruntime.HandleError(err)
 		}
+		// if err != nil {
+		// 	r.eventRecorder.Eventf(mpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; reason: %s; error: %v", desiredReplicas, rescaleReason, err.Error())
+		// 	klog.Errorf("%s: FailedRescale - New size: %d; reason: %s; error: %v", v1.EventTypeWarning, desiredReplicas, rescaleReason, err.Error())
+		// 	setCondition(mpa, mpa_types.AbleToScale, v1.ConditionFalse, "FailedUpdateScale", "the MPA controller was unable to update the target scale: %v", err)
+		// 	r.setCurrentReplicasInStatus(mpa, currentReplicas)
+		// 	if err := r.updateStatusIfNeeded(ctx, mpaStatusOriginal, mpa); err != nil {
+		// 		klog.Errorf("Error updating MPA status: %v", err.Error())
+		// 		utilruntime.HandleError(err)
+		// 	}
+		// 	return fmt.Errorf("failed to rescale %s: %v", reference, err)
+		// }
 		setCondition(mpa, mpa_types.AbleToScale, v1.ConditionTrue, "SucceededRescale", "the MPA controller was able to update the target scale to %d", desiredReplicas)
 		r.eventRecorder.Eventf(mpa, v1.EventTypeNormal, "SuccessfulRescale", "New size: %d; reason: %s", desiredReplicas, rescaleReason)
-		klog.V(4).Infof("%s: Successfully rescaled the number of replicas to %d for MPA %v", v1.EventTypeNormal, desiredReplicas, key)
+		// klog.V(4).Infof("%s: Successfully rescaled the number of replicas to %d for MPA %v", v1.EventTypeNormal, desiredReplicas, key)
 		r.storeScaleEvent(mpa.Spec.Constraints.Behavior, key, currentReplicas, desiredReplicas)
-		klog.Infof("Successful rescaled of %s, old size: %d, new size: %d, reason: %s", mpa.Name, currentReplicas, desiredReplicas, rescaleReason)
+		// klog.Infof("Successful rescaled of %s, old size: %d, new size: %d, reason: %s", mpa.Name, currentReplicas, desiredReplicas, rescaleReason)
 	} else {
 		klog.V(4).Infof("decided not to scale %s to %v (reason: %s) (the last scale time was %s)", reference, desiredReplicas, rescaleReason, mpa.Status.LastScaleTime)
 		desiredReplicas = currentReplicas

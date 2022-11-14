@@ -51,6 +51,10 @@ type MpaTargetSelectorFetcher interface {
 	// Fetch returns a labelSelector used to gather Pods controlled by the given MPA.
 	// If error is nil, the returned labelSelector is not nil.
 	Fetch(mpa *mpa_types.MultidimPodAutoscaler) (labels.Selector, error)
+
+	// For updating the Deployments.
+	GetRESTMappings(groupKind schema.GroupKind) ([]*apimeta.RESTMapping, error)
+	Scales(namespace string) (scale.ScaleInterface)
 }
 
 type wellKnownController string
@@ -199,4 +203,12 @@ func (f *mpaTargetSelectorFetcher) getLabelSelectorFromResource(
 
 	// nothing found, apparently the resource does support scale (or we lack RBAC)
 	return nil, lastError
+}
+
+func (f *mpaTargetSelectorFetcher) GetRESTMappings(groupKind schema.GroupKind) ([]*apimeta.RESTMapping, error) {
+	return f.mapper.RESTMappings(groupKind)
+}
+
+func (f *mpaTargetSelectorFetcher) Scales(namespace string) (scale.ScaleInterface) {
+	return f.scaleNamespacer.Scales(namespace)
 }

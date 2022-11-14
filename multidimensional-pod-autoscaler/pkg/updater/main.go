@@ -117,7 +117,8 @@ func main() {
 	ticker := time.Tick(*updaterInterval)
 	for range ticker {
 		ctx, cancel := context.WithTimeout(context.Background(), *updaterInterval)
-		updater.RunOnce(ctx)
+		// updater.RunOnce(ctx)
+		updater.RunOnceUpdatingDeployment(ctx)
 		healthCheck.UpdateLastActivity()
 		cancel()
 	}
