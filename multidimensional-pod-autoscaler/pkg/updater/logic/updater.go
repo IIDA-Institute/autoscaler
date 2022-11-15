@@ -322,14 +322,15 @@ func (u *updater) RunOnceUpdatingDeployment(ctx context.Context) {
 			klog.V(4).Infof("No need to change the number of replicas for MPA %v", mpa.Name)
 			continue
 		} else {
-			scale.Spec.Replicas = desiredReplicas
 			klog.V(4).Infof("Updating the number of replicas from %d to %d for MPA %v", scale.Spec.Replicas, desiredReplicas, mpa.Name)
+			scale.Spec.Replicas = desiredReplicas
 			_, err = u.selectorFetcher.Scales(mpa.Namespace).Update(ctx, targetGR, scale, metav1.UpdateOptions{})
 			if err != nil {
 				u.eventRecorder.Eventf(mpa, v1.EventTypeWarning, "FailedRescale", "New size: %d; error: %v", desiredReplicas, err.Error())
 				klog.Errorf("%s: FailedRescale - New size: %d; error: %v", v1.EventTypeWarning, desiredReplicas, err.Error())
 				return
 			}
+			klog.V(4).Infof("%s: Successfully rescaled the number of replicas to %d based on MPA %v", v1.EventTypeNormal, desiredReplicas, mpa.Name)
 		}
 	}
 
