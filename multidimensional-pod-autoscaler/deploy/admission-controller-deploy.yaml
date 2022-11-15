@@ -20,7 +20,7 @@ spec:
         runAsUser: 65534 # nobody
       containers:
         - name: admission-controller
-          image: k8s.gcr.io/autoscaling/mpa-admission-controller:latest  # TODO: upload image
+          image: haoranq4/mpa-admission-controller-amd64:latest
           imagePullPolicy: Always
           env:
             - name: NAMESPACE
