@@ -246,7 +246,8 @@ func (u *updater) RunOnce(ctx context.Context) {
 	klog.V(4).Infof("Evicted all eligible pods.")
 }
 
-// RunOnceUpdatingDeployment represents single iteration in the main-loop of Updater
+// RunOnceUpdatingDeployment represents single iteration in the main-loop of Updater which evicts
+// pods for VPA and updates the Deployment for HPA.
 func (u *updater) RunOnceUpdatingDeployment(ctx context.Context) {
 	timer := metrics_updater.NewExecutionTimer()
 	defer timer.ObserveTotal()
@@ -320,6 +321,10 @@ func (u *updater) RunOnceUpdatingDeployment(ctx context.Context) {
 		if (desiredReplicas == scale.Spec.Replicas) {
 			// No need to update the number of replicas.
 			klog.V(4).Infof("No need to change the number of replicas for MPA %v", mpa.Name)
+			continue
+		} else if (desiredReplicas > *mpa.Spec.Constraints.MaxReplicas || desiredReplicas < *mpa.Spec.Constraints.MinReplicas) {
+			// Constraints not satisfied. Should not be out of bound because it should have been
+			// checked in the recommender.
 			continue
 		} else {
 			klog.V(4).Infof("Updating the number of replicas from %d to %d for MPA %v", scale.Spec.Replicas, desiredReplicas, mpa.Name)

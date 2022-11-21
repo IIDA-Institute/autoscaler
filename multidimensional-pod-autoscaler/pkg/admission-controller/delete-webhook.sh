@@ -17,7 +17,6 @@
 # Unregisters the admission controller webhook.
 set -e
 
-echo "Unregistering VPA admission controller webhook"
+echo "Unregistering MPA admission controller webhook"
 
-kubectl delete -n kube-system mutatingwebhookconfiguration.v1.admissionregistration.k8s.io vpa-webhook-config
-
+kubectl delete -n kube-system mutatingwebhookconfiguration.v1.admissionregistration.k8s.io mpa-webhook-config
