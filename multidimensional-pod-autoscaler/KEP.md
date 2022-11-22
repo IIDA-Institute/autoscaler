@@ -97,8 +97,9 @@ Manual fine-tuning the timing or frequency to do vertical/horizontal scaling and
 
 ### Non-Goals
 
-- Design of new multi-dimensional pod autoscaling algorithms.
+- Design of new multi-dimensional pod autoscaling algorithms. Although this proposal will enable alternate recommenders, no alternate recommenders will be created as part of this proposal. 
 - Rewrite functionalities that have been implemented with existing HPA and VPA.
+- This proposal will not support running multiple recommenders for the same MPA object. Each MPA object is supposed to use only one recommender.
 
 ## Proposal
 ### User Stories
@@ -133,6 +134,104 @@ Our proposed MPA framework consists of three controllers (i.e., a recommender, a
 **MPA Updater.** MPA Updater will update the number of replicas in the deployment and evict the eligible pods for vertical scaling.
 
 **MPA Admission-Controller.** If users intend to directly execute the autoscaling recommendations generated from the MPA Recommender, the MPA Admission-Controller will update the deployment configuration (i.e., the size of each replica) and configure the rolling update to the Application Deployment.
+
+### Action Actuation Implementation
+
+To actuate the decisions without losing availability, we plan to (1) evict pods with min-replicas configured and update Pod sizes with the web-hooked admission controller (for vertical scaling), and (2) add or remove replicas (for horizontal scaling).
+We use a web-hooked admission controller to manage vertical scaling because if the actuator directly updates the vertical scaling configurations through deployment, it will potentially overload etcd (as vertical scaling might be quite frequent).
+MPA Admission Controller intercepts Pod creation requests and rewrites the request by applying recommended resources to the Pod spec.
+We do not use the web-hooked admission controller to manage the horizontal scaling as it could slow down the pod creation process.
+In the future when the in-place vertical resizing is enabled, we can remove the web-hooked admission controller and only have the updater.
+
+[<img src="./kep-imgs/mpa-action-actuation.png" width="400"/>](./kep-imgs/mpa-action-actuation.png "MPA Action Actuation")
+
+Pros:
+- Vertical scaling is handled by webhooks to avoid overloading etcd
+- Horizontal scaling is handled through deployment to avoid extra overhead by webhooks
+- Authentication and authorization for vertical scaling are handled by admission webhooks
+- Recommendation and the actuation are completely separated
+
+Cons:
+- Webhooks introduce extra overhead for vertical scaling operations (can be avoided after in-place resizing of pod is enabled without eviction)
+- Vertical and horizontal scaling executions are separated (can be avoided after in-place resizing of pod is enabled without eviction)
+- State changes in pod sizes are not persisted (too much to keep in etcd, could use Prometheus to store pod state changes)
+
+### Action Recommendation Implementation
+
+To generate the vertical scaling action recommendation, we reuse VPA libraries as much as possible to implement scaling algorithm integrated with the newly generated MPA API code.
+To do that, we need to update accordingly the code which reads and updates the VPA objects to be interacting with the MPA objects.
+To generate the horizontal scaling action recommendation, we reuse HPA libraries, integrating with the MPA API code, to reads and updates the MPA objects.
+We integrate vertical and horizontal scaling in a single feedback cycle.
+As an intitial solution, vertical scaling and horizontal scaling is performed alternatively (vertical scaling first).
+In the future, we can consider more complex way of prioritization and conflict resolution.
+The separation of recommendation and actuation allows customized recommender to be used to replace the default recommender.
+For example, users can plug-in their RL-based controller to replace the MPA recommender, receiving measurements from the Metrics Server and modifying the MPA objects directly to give recommendations.
+
+The implementation of the MPA framework (the backend) is based on the existing HPA and VPA codebase so that it only requires minimum code maintenance.
+Reused Codebase References:
+- HPA: https://github.com/kubernetes/kubernetes/tree/master/pkg/controller/podautoscaler
+- VPA: https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler
+
+### MPA API Object
+
+We reuse the CR definitions from the [MultidimPodAutoscaler](https://cloud.google.com/kubernetes-engine/docs/how-to/multidimensional-pod-autoscaling) object developed by Google.
+`MultidimPodAutoscaler` is the configuration for multi-dimensional Pod autoscaling, which automatically manages Pod resources and their count based on historical and real-time resource utilization.
+MultidimPodAutoscaler has two main fields: `spec` and `status`.
+
+#### MPA Spec
+
+```
+# MultidimPodAutoscalerSpec
+apiVersion: autoscaling.gke.io/v1beta1
+kind: MultidimPodAutoscaler
+metadata:
+  name: my-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-target
+  updatePolicy:
+    updateMode: Auto
+  metrics:
+  - type: Resource
+    resource:
+    # Define the target CPU utilization request here
+    name: cpu
+    target:
+      type: Utilization
+      averageUtilization: target-cpu-util
+  constraints:
+    minReplicas: min-num-replicas
+    maxReplicas: max-num-replicas
+  resourcePolicy:
+    containerControlledResources: [ memory, cpu ]  # Added cpu here as well
+    container:
+    - name: '*'
+    # Define boundaries for the memory request here
+      requests:
+        minAllowed:
+          memory: min-allowed-memory
+        maxAllowed:
+          memory: max-allowed-memory
+  # Define the recommender to use here
+  recommenders:
+  - name: my-recommender
+```
+
+#### MPA Status
+
+```
+// Describes the current status of a multidimensional pod autoscaler
+type MultidimPodAutoscalerStatus struct {
+  LastScaleTime *metav1.Time
+  CurrentReplicas int32
+  DesiredReplicas int32
+  Recommendation *vpa.RecommendedPodResources
+  CurrentMetrics []autoscalingv2.MetricStatus
+  Conditions []MultidimPodAutoscalerCondition
+}
+```
 
 ### Test Plan
 
@@ -188,7 +287,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 <!-- - <test>: <link to test coverage> -->
 
-Integration tests are to be added.
+Integration tests are to be added in the beta version.
 
 #### End-to-End Tests
 
@@ -204,7 +303,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 <!-- - <test>: <link to test coverage> -->
 
-End-to-end tests are to be added.
+End-to-end tests are to be added in the beta version.
 
 ### Graduation Criteria
 
@@ -641,15 +740,7 @@ For HPA, additional support for alternative recommenders is needed so MPA can wr
   - Additional support from HPA (enabling customized recommenders) is needed which requires update in the upstream Kubernetes
   - Hard to coordinate/synchronize when horizontal and vertical scaling states and decisions are kept in different places (i.e., HPA and VPA object)
 
-### Vertical Scaling Action Actuation
+### Google GKE's Approach of MPA
 
-An alternative option considered for vertical scaling action actuation is to force configuration rolling update directly from MPA Updater to the application Deployment and consistently change the source of truth at App CR that stores the application Deployment configurations. ORM App CR allows the actuator to manage the resources (i.e., vertical and horizontal scaling).
-
-- Pros:
-  - Keeps both vertical and horizontal scaling executions together
-  - No need to use webhooks (extra overhead)
-- Con:
-  - Too many App CRs to manage
-  - Could overload etcd as there might be frequency state changes (vertical scaling)
-  - Needs to manually ensure consistency between App CR and the execution to the Application Deployment
-  - Needs to take care of the authentication and authorization
+In this [alternative approach](https://cloud.google.com/kubernetes-engine/docs/how-to/multidimensional-pod-autoscaling) (non-open-sourced), a `MultidimPodAutoscaler` object modifies memory or/and CPU requests and adds replicas so that the average utilization of each replica matches your target utilization.
+The MPA object will be translated to VPA and HPA objects so at the end there are two *independent* controllers managing the vertical and horizontal scaling application deployment.
