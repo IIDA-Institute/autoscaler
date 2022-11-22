@@ -7,20 +7,15 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories](#user-stories-optional)
+    - [A New MPA Framework with Reinforcement Learning](#a-new-mpa-framework-with-reinforcement-learning)
+    - [Different Scaling Actions for Different Types of Resources](#different-scaling-actions-for-different-types-of-resources)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Unit Tests](#unit-tests)
+    - [Integration Tests](#integration-tests)
+    - [End-to-end Tests](#end-to-end-tests)
   - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -31,7 +26,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -91,9 +85,9 @@ Therefore, there is a need to combine the two controllers so that horizontal and
 However, existing VPA/HPA designs cannot accommodate such requirements.
 Manual fine-tuning the timing or frequency to do vertical/horizontal scaling and prioritization are usually needed for syncronization of the HPA and VPA.
 
-[HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
-[VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
-[not recommended](https://cloud.google.com/kubernetes-engine/docs/concepts/horizontalpodautoscaler)
+[HPA]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
+[VPA]: https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler
+[not recommended]: https://cloud.google.com/kubernetes-engine/docs/concepts/horizontalpodautoscaler
 
 ### Goals
 
@@ -113,6 +107,7 @@ Manual fine-tuning the timing or frequency to do vertical/horizontal scaling and
 Many studies in research show that combined horizontal and vertical scaling can guarantee application performance with better resource efficiency using advanced algorithms such as reinforcement learning [1, 2]. These algorithms cannot be used with existing HPA and VPA frameworks. A new framework (MPA) is needed to combine horizontal and vertical scaling actions and separate the actuation of scaling actions from the autoscaling algorithms. The new MPA framework will work for all workloads on Kubernetes.
 
 [1] Haoran Qiu, Subho S. Banerjee, Saurabh Jha, Zbigniew T. Kalbarczyk, Ravishankar K. Iyer (2020). FIRM: An Intelligent Fine-Grained Resource Management Framework for SLO-Oriented Microservices. In Proceedings of the 14th USENIX Symposium on Operating Systems Design and Implementation (OSDI 2020).
+
 [2] Haoran Qiu, Weichao Mao, Archit Patke, Chen Wang, Hubertus Franke, Zbigniew T. Kalbarczyk, Tamer Başar, Ravishankar K. Iyer (2022). SIMPPO: A Scalable and Incremental Online Learning Framework for Serverless Resource Management. In Proceedings of the 13th ACM Symposium on Cloud Computing (SoCC 2022).
 
 #### Different Scaling Actions for Different Types of Resources
@@ -123,15 +118,15 @@ For certain workloads, to ensure a custom metric (e.g., throughput or request-se
 
 Our proposed MPA framework consists of three controllers (i.e., a recommender, an updater, and an admission controller) and an MPA API (i.e., a CRD object or CR) that connects the autoscaling recommendations to actuation. The figure below describes the architectural overview of the proposed MPA framework.
 
-![MPA Design Overview](./kep-imgs/mpa-design.png "MPA Design Overview")
+[<img src="./kep-imgs/mpa-design.png" width="700"/>](./kep-imgs/mpa-design.png "MPA Design Overview")
 
 **MPA API.** Application owners specify the autoscaling configurations which include (1) whether they only want to know the recommendations from MPA or they want MPA to directly actuate the autoscaling decisions; (2) application SLAs (e.g., in terms of latency or throughput); (3) any custom metrics if there are; and (4) other autoscaling configurations that exist in HPA and VPA (e.g., desired resource utilizations, container update policies, min and max number of replicas). MPA API is also responsible for connecting the autoscaling actions generated from the MPA Recommender to MPA Admission Controller and Updater which actually execute the scaling actions. MPA API is created based on the [multidimensional Pod scaling service] (not open-sourced) provided by Google. MPA API is a Custom Resource Definition (CRD) in Kubernetes and each MPA instance is a CR. MPA CR keeps track of recommendations on target requests and target replica numbers.
 
-[multidimensional Pod scaling service](https://cloud.google.com/kubernetes-engine/docs/how-to/multidimensional-pod-autoscaling)
+[multidimensional Pod scaling service]: https://cloud.google.com/kubernetes-engine/docs/how-to/multidimensional-pod-autoscaling
 
 **Metric Server API.** The Metric Server API serves both default metrics or custom metrics associated with any Kubernetes objects. Custom metrics could be the application latency, throughput, or any other application-specific metrics. HPA already consumes metrics from such [a variety of metric APIs] (e.g., `metrics.k8s.io` API for resource metrics provided by metrics-server, `custom.metrics.k8s.io` API for custom metrics provided by "adapter" API servers provided by metrics solution vendors, and the `external.metrics.k8s.io` API for external metrics provided by the custom metrics adapters as well. A popular choice for the metrics collector is Prometheus. The metrics are then used by the MPA Recommender for making autoscaling decisions.
 
-[a variety of metric APIs](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-metrics-apis)
+[a variety of metric APIs]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-metrics-apis
 
 **MPA Recommender.** MPA Recommender retrieves the time-indexed measurement data from the Metrics APIs and generates the vertical and horizontal scaling actions. The actions from the MPA Recommender are then updated in the MPA API object. The autoscaling behavior is based on user-defined configurations. Users can implement their own recommenders as well.
 
@@ -179,6 +174,8 @@ extending the production code to implement this enhancement.
 
 <!-- - `<package>`: `<date>` - `<test coverage>` -->
 
+Unit tests are located at each controller package.
+
 #### Integration Tests
 
 <!--
@@ -190,6 +187,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 <!-- - <test>: <link to test coverage> -->
+
+Integration tests are to be added.
 
 #### End-to-End Tests
 
@@ -204,6 +203,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 <!-- - <test>: <link to test coverage> -->
+
+End-to-end tests are to be added.
 
 ### Graduation Criteria
 
@@ -626,3 +627,29 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### MPA as a Recommender Only
+
+An alternative option is to have MPA just as a recommender.
+For VPA, based on the support of the customized recommender, MPA can be implemented as a recommender to write to a VPA object. Then VPA updater and admission controller will actuate the recommendation.
+For HPA, additional support for alternative recommenders is needed so MPA can write scaling recommendations to the HPA object as well.
+
+- Pros:
+  - Less work and easier maintenance in the future
+  - Simple especially when vertical and horizontal are two completely independent control loops
+- Cons:
+  - Additional support from HPA (enabling customized recommenders) is needed which requires update in the upstream Kubernetes
+  - Hard to coordinate/synchronize when horizontal and vertical scaling states and decisions are kept in different places (i.e., HPA and VPA object)
+
+### Vertical Scaling Action Actuation
+
+An alternative option considered for vertical scaling action actuation is to force configuration rolling update directly from MPA Updater to the application Deployment and consistently change the source of truth at App CR that stores the application Deployment configurations. ORM App CR allows the actuator to manage the resources (i.e., vertical and horizontal scaling).
+
+- Pros:
+  - Keeps both vertical and horizontal scaling executions together
+  - No need to use webhooks (extra overhead)
+- Con:
+  - Too many App CRs to manage
+  - Could overload etcd as there might be frequency state changes (vertical scaling)
+  - Needs to manually ensure consistency between App CR and the execution to the Application Deployment
+  - Needs to take care of the authentication and authorization
