@@ -83,13 +83,13 @@ type timestampedScaleEvent struct {
 // Recommender recommend resources for certain containers, based on utilization periodically got from metrics api.
 type Recommender interface {
 	// RunOnce performs one iteration of recommender duties followed by update of recommendations in MPA objects.
-	RunOnce(workers int)
+	RunOnce(workers int, vpaOrHpa string)
 	// GetClusterState returns ClusterState used by Recommender
 	GetClusterState() *model.ClusterState
 	// GetClusterStateFeeder returns ClusterStateFeeder used by Recommender
 	GetClusterStateFeeder() input.ClusterStateFeeder
 	// UpdateMPAs computes recommendations and sends MPAs status updates to API Server
-	UpdateMPAs(ctx context.Context)
+	UpdateMPAs(ctx context.Context, vpaOrHpa string)
 	// MaintainCheckpoints stores current checkpoints in API Server and garbage collect old ones
 	// MaintainCheckpoints writes at least minCheckpoints if there are more checkpoints to write.
 	// Checkpoints are written until ctx permits or all checkpoints are written.
@@ -133,7 +133,8 @@ func (r *recommender) GetClusterStateFeeder() input.ClusterStateFeeder {
 }
 
 // Updates MPA CRD objects' statuses.
-func (r *recommender) UpdateMPAs(ctx context.Context) {
+// vpaOrHpa can be either 'vpa', 'hpa', or 'both'.
+func (r *recommender) UpdateMPAs(ctx context.Context, vpaOrHpa string) {
 	cnt := metrics_recommender.NewObjectCounter()
 	defer cnt.Observe()
 
@@ -151,46 +152,50 @@ func (r *recommender) UpdateMPAs(ctx context.Context) {
 		}
 
 		// Vertical Pod Autoscaling
-		klog.V(4).Infof("Vertical scaling...")
-		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
-		had := mpa.HasRecommendation()
-		mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
-		klog.V(4).Infof("MPA %v recommendation updated: %v (%v)", key, resources, had)
-		if mpa.HasRecommendation() && !had {
-			metrics_recommender.ObserveRecommendationLatency(mpa.Created)
-		}
-		hasMatchingPods := mpa.PodCount > 0
-		mpa.UpdateConditions(hasMatchingPods)
-		if err := r.clusterState.RecordRecommendation(mpa, time.Now()); err != nil {
-			klog.Warningf("%v", err)
-			if klog.V(4).Enabled() {
-				klog.Infof("MPA dump")
-				klog.Infof("%+v", mpa)
-				klog.Infof("HasMatchingPods: %v", hasMatchingPods)
-				klog.Infof("PodCount: %v", mpa.PodCount)
-				pods := r.clusterState.GetMatchingPods(mpa)
-				klog.Infof("MatchingPods: %+v", pods)
-				if len(pods) != mpa.PodCount {
-					klog.Errorf("ClusterState pod count and matching pods disagree for mpa %v/%v", mpa.ID.Namespace, mpa.ID.MpaName)
+		if (vpaOrHpa != "hpa") {
+			klog.V(4).Infof("Vertical scaling...")
+			resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(mpa))
+			had := mpa.HasRecommendation()
+			mpa.UpdateRecommendation(getCappedRecommendation(mpa.ID, resources, observedMpa.Spec.ResourcePolicy))
+			klog.V(4).Infof("MPA %v recommendation updated: %v (%v)", key, resources, had)
+			if mpa.HasRecommendation() && !had {
+				metrics_recommender.ObserveRecommendationLatency(mpa.Created)
+			}
+			hasMatchingPods := mpa.PodCount > 0
+			mpa.UpdateConditions(hasMatchingPods)
+			if err := r.clusterState.RecordRecommendation(mpa, time.Now()); err != nil {
+				klog.Warningf("%v", err)
+				if klog.V(4).Enabled() {
+					klog.Infof("MPA dump")
+					klog.Infof("%+v", mpa)
+					klog.Infof("HasMatchingPods: %v", hasMatchingPods)
+					klog.Infof("PodCount: %v", mpa.PodCount)
+					pods := r.clusterState.GetMatchingPods(mpa)
+					klog.Infof("MatchingPods: %+v", pods)
+					if len(pods) != mpa.PodCount {
+						klog.Errorf("ClusterState pod count and matching pods disagree for mpa %v/%v", mpa.ID.Namespace, mpa.ID.MpaName)
+					}
 				}
 			}
-		}
-		cnt.Add(mpa)
+			cnt.Add(mpa)
 
-		_, err := mpa_utils.UpdateMpaStatusIfNeeded(
-			r.mpaClient.MultidimPodAutoscalers(mpa.ID.Namespace), mpa.ID.MpaName, mpa.AsStatus(), &observedMpa.Status)
-		if err != nil {
-			klog.Errorf(
-				"Cannot update MPA %v object. Reason: %+v", mpa.ID.MpaName, err)
+			_, err := mpa_utils.UpdateMpaStatusIfNeeded(
+				r.mpaClient.MultidimPodAutoscalers(mpa.ID.Namespace), mpa.ID.MpaName, mpa.AsStatus(), &observedMpa.Status)
+			if err != nil {
+				klog.Errorf(
+					"Cannot update MPA %v object. Reason: %+v", mpa.ID.MpaName, err)
+			}
 		}
 
 		// Horizontal Pod Autoscaling
-		observedMpa.Status.Recommendation = mpa.AsStatus().Recommendation
-		observedMpa.Status.Conditions = mpa.AsStatus().Conditions
-		klog.V(4).Infof("Horizontal scaling...")
-		errHPA := r.ReconcileHorizontalAutoscaling(ctx, observedMpa, key)
-		if errHPA != nil {
-			klog.Errorf("Error updating MPA status: %v", errHPA.Error())
+		if (vpaOrHpa != "vpa") {
+			observedMpa.Status.Recommendation = mpa.AsStatus().Recommendation
+			observedMpa.Status.Conditions = mpa.AsStatus().Conditions
+			klog.V(4).Infof("Horizontal scaling...")
+			errHPA := r.ReconcileHorizontalAutoscaling(ctx, observedMpa, key)
+			if errHPA != nil {
+				klog.Errorf("Error updating MPA status: %v", errHPA.Error())
+			}
 		}
 	}
 }
@@ -245,7 +250,7 @@ func (r *recommender) MaintainCheckpoints(ctx context.Context, minCheckpointsPer
 	}
 }
 
-func (r *recommender) RunOnce(workers int) {
+func (r *recommender) RunOnce(workers int, vpaOrHpa string) {
 	timer := metrics_recommender.NewExecutionTimer()
 	defer timer.ObserveTotal()
 
@@ -269,7 +274,7 @@ func (r *recommender) RunOnce(workers int) {
 	timer.ObserveStep("LoadMetrics")
 	klog.V(3).Infof("ClusterState is tracking %v PodStates and %v MPAs", len(r.clusterState.Pods), len(r.clusterState.Mpas))
 
-	r.UpdateMPAs(ctx)
+	r.UpdateMPAs(ctx, vpaOrHpa)
 	timer.ObserveStep("UpdateMPAs")
 
 	r.MaintainCheckpoints(ctx, *minCheckpointsPerRun)

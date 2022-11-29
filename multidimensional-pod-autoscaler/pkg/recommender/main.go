@@ -190,9 +190,15 @@ func main() {
 
 	ticker := time.Tick(*metricsFetcherInterval)
 	klog.Info("Start running MPA Recommender...")
+	var vpaOrHpa = "vpa"
 	for range ticker {
-		recommender.RunOnce(int(*concurrentHPASyncs))
+		recommender.RunOnce(int(*concurrentHPASyncs), vpaOrHpa)
 		healthCheck.UpdateLastActivity()
 		klog.Info("Health check completed.")
+		if (vpaOrHpa == "vpa") {
+			vpaOrHpa = "hpa"
+		} else if (vpaOrHpa == "hpa") {
+			vpaOrHpa = "vpa"
+		}
 	}
 }
