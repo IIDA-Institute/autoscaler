@@ -204,18 +204,25 @@ class PCAPEnvironment:
 
         # get the custom metrics (PCAP-related)
         if 'event_pcap_file_discovery_rate' in self.custom_metrics:
-            metric_traces = traces['pcap-scheduler']['event_pcap_file_discovery_rate']
-            rate = []
-            for trace in metric_traces:
-                values = []
-                for measurement in metric_traces[trace]:
-                    values.append(float(measurement[1]))
-                rate.append(np.mean(values))
-            print('Avg PCAP file discovery rate:', np.mean(rate))
-            print('Total PCAP file discovery rate:', sum(rate))
-            self.states['pcap_file_discovery_rate'] = np.mean(rate)
+            if 'pcap-scheduler' not in traces:
+                print('Metric event_pcap_file_discovery_rate not found!')
+            elif 'event_pcap_file_discovery_rate' not in traces['pcap-scheduler']:
+                print('Metric event_pcap_file_discovery_rate not found!')
+            else:
+                metric_traces = traces['pcap-scheduler']['event_pcap_file_discovery_rate']
+                rate = []
+                for trace in metric_traces:
+                    values = []
+                    for measurement in metric_traces[trace]:
+                        values.append(float(measurement[1]))
+                    rate.append(np.mean(values))
+                print('Avg PCAP file discovery rate:', np.mean(rate))
+                print('Total PCAP file discovery rate:', sum(rate))
+                self.states['pcap_file_discovery_rate'] = np.mean(rate)
         if 'event_pcap_rate_processing' in self.custom_metrics:
-            if 'event_pcap_rate_processing' not in traces['pcap-log-monitor']:
+            if 'pcap-log-monitor' not in traces:
+                print('Metric event_pcap_rate_processing not found!')
+            elif 'event_pcap_rate_processing' not in traces['pcap-log-monitor']:
                 print('Metric event_pcap_rate_processing not found!')
             else:
                 metric_traces = traces['pcap-log-monitor']['event_pcap_rate_processing']
@@ -230,7 +237,9 @@ class PCAPEnvironment:
                 print('Total PCAP processing rate:', sum(rate))
                 self.states['pcap_processing_rate'] = np.mean(rate)
         if 'event_pcap_rate_ingestion' in self.custom_metrics:
-            if 'event_pcap_rate_ingestion' not in traces['pcap-log-monitor']:
+            if 'pcap-log-monitor' not in traces:
+                print('Metric event_pcap_rate_ingestion not found!')
+            elif 'event_pcap_rate_ingestion' not in traces['pcap-log-monitor']:
                 print('Metric event_pcap_rate_ingestion not found!')
             else:
                 metric_traces = traces['pcap-log-monitor']['event_pcap_rate_ingestion']
@@ -245,7 +254,9 @@ class PCAPEnvironment:
                 print('Total PCAP ingestion rate:', sum(rate))
                 self.states['pcap_ingestion_rate'] = np.mean(rate)
         if 'event_pcap_rate' in self.custom_metrics:
-            if 'event_pcap_rate' not in traces['pcap-log-monitor']:
+            if 'pcap-log-monitor' not in traces:
+                print('Metric event_pcap_rate not found!')
+            elif 'event_pcap_rate' not in traces['pcap-log-monitor']:
                 print('Metric event_pcap_rate not found!')
             else:
                 metric_traces = traces['pcap-log-monitor']['event_pcap_rate']
@@ -260,41 +271,56 @@ class PCAPEnvironment:
                 print('Total PCAP rate:', sum(rate))
                 self.states['pcap_rate'] = np.mean(rate)
         if 'event_tek_rate_processing' in self.custom_metrics:
-            metric_traces = traces['tek-log-monitor']['event_tek_rate_processing']
-            rate = []
-            for container in metric_traces:
-                values = []
-                for measurement in metric_traces[container]:
-                    values.append(float(measurement[1]))
-                print(container, np.mean(values))
-                rate.append(np.mean(values))
-            print('Avg TEK processing rate:', np.mean(rate))
-            print('Total TEK processing rate:', sum(rate))
-            self.states['tek_processing_rate'] = np.mean(rate)
+            if 'tek-log-monitor' not in traces:
+                print('Metric event_tek_rate_processing not found!')
+            elif 'event_tek_rate_processing' not in traces['tek-log-monitor']:
+                print('Metric event_tek_rate_processing not found!')
+            else:
+                metric_traces = traces['tek-log-monitor']['event_tek_rate_processing']
+                rate = []
+                for container in metric_traces:
+                    values = []
+                    for measurement in metric_traces[container]:
+                        values.append(float(measurement[1]))
+                    print(container, np.mean(values))
+                    rate.append(np.mean(values))
+                print('Avg TEK processing rate:', np.mean(rate))
+                print('Total TEK processing rate:', sum(rate))
+                self.states['tek_processing_rate'] = np.mean(rate)
         if 'event_tek_rate_ingestion' in self.custom_metrics:
-            metric_traces = traces['tek-log-monitor']['event_tek_rate_ingestion']
-            rate = []
-            for container in metric_traces:
-                values = []
-                for measurement in metric_traces[container]:
-                    values.append(float(measurement[1]))
-                print(container, np.mean(values))
-                rate.append(np.mean(values))
-            print('Avg TEK ingestion rate:', np.mean(rate))
-            print('Total TEK ingestion rate:', sum(rate))
-            self.states['tek_ingestion_rate'] = np.mean(rate)
+            if 'tek-log-monitor' not in traces:
+                print('Metric event_tek_rate_ingestion not found!')
+            elif 'event_tek_rate_ingestion' not in traces['tek-log-monitor']:
+                print('Metric event_tek_rate_ingestion not found!')
+            else:
+                metric_traces = traces['tek-log-monitor']['event_tek_rate_ingestion']
+                rate = []
+                for container in metric_traces:
+                    values = []
+                    for measurement in metric_traces[container]:
+                        values.append(float(measurement[1]))
+                    print(container, np.mean(values))
+                    rate.append(np.mean(values))
+                print('Avg TEK ingestion rate:', np.mean(rate))
+                print('Total TEK ingestion rate:', sum(rate))
+                self.states['tek_ingestion_rate'] = np.mean(rate)
         if 'event_tek_rate' in self.custom_metrics:
-            metric_traces = traces['tek-log-monitor']['event_tek_rate']
-            rate = []
-            for container in metric_traces:
-                values = []
-                for measurement in metric_traces[container]:
-                    values.append(float(measurement[1]))
-                print(container, np.mean(values))
-                rate.append(np.mean(values))
-            print('Avg TEK rate:', np.mean(rate))
-            print('Total TEK rate:', sum(rate))
-            self.states['tek_rate'] = np.mean(rate)
+            if 'tek-log-monitor' not in traces:
+                print('Metric event_tek_rate not found!')
+            elif 'event_tek_rate' not in traces['tek-log-monitor']:
+                print('Metric event_tek_rate not found!')
+            else:
+                metric_traces = traces['tek-log-monitor']['event_tek_rate']
+                rate = []
+                for container in metric_traces:
+                    values = []
+                    for measurement in metric_traces[container]:
+                        values.append(float(measurement[1]))
+                    print(container, np.mean(values))
+                    rate.append(np.mean(values))
+                print('Avg TEK rate:', np.mean(rate))
+                print('Total TEK rate:', sum(rate))
+                self.states['tek_rate'] = np.mean(rate)
 
     # initialize the environment
     def init(self):
@@ -345,9 +371,15 @@ class PCAPEnvironment:
             cpu_limit_to_set = self.states['cpu_limit'] + action['vertical_cpu']
             if cpu_limit_to_set > MAX_CPU_LIMIT or cpu_limit_to_set < MIN_INSTANCES:
                 return False
+            if self.states['num_replicas'] <= 1:
+                # num_replicas must >= 2 when vertical scaling needs to evict the pod
+                return False
         elif action['vertical_memory'] != 0:
             memory_limit_to_set = self.states['memory_limit'] + action['vertical_memory']
             if memory_limit_to_set > MAX_MEMORY_LIMIT or memory_limit_to_set < MIN_MEMORY_LIMIT:
+                return False
+            if self.states['num_replicas'] <= 1:
+                # num_replicas must >= 2 when vertical scaling needs to evict the pod
                 return False
         return True
 
