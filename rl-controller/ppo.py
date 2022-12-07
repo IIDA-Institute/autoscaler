@@ -241,6 +241,7 @@ class PPO:
             if SAVE_TO_FILE:
                 all_rewards = [reward for reward_ep in rewards for reward in reward_ep]
                 self.save_trajectories(iteration, states, actions, all_rewards)
+                print('Trajectory saved!')
 
             if self.skip_update:
                 continue
@@ -368,9 +369,6 @@ class PPO:
 
     # record trajectories
     def save_trajectories(self, episode_num, states, actions, rewards):
-        print('states:', states)
-        print('actions:', actions)
-        print('rewards:', rewards)
         file = open(LOG_DIR + "ppo_trajectories.csv", "a")
         count = 0
         for state in states:
