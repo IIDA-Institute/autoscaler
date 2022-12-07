@@ -40,8 +40,8 @@ import (
 )
 
 var (
-	updaterInterval = flag.Duration("updater-interval", 1*time.Minute,
-		`How often updater should run`)
+	updaterInterval = flag.Duration("updater-interval", 10*time.Second,
+		`How often updater should run (default: 10s)`)
 
 	minReplicas = flag.Int("min-replicas", 2,
 		`Minimum number of replicas to perform update (global setting) which can be overriden by the per-MPA setting.`)
