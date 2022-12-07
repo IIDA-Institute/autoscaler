@@ -1,34 +1,10 @@
 import os
-
 import psutil
 import torch
 from torch import nn
 import matplotlib.pyplot as plt
+import numpy as np
 from util import *
-
-PLOT_FIG = True
-SAVE_FIG = True
-SAVE_TO_FILE = True
-
-CHECKPOINT_DIR = './checkpoints/'
-
-TOTAL_ITERATIONS = 500
-EPISODES_PER_ITERATION = 5
-EPISODE_LENGTH = 200
-
-# hyperparameters
-DISCOUNT = 0.99
-HIDDEN_SIZE = 64
-LR = 3e-4  # 5e-3 5e-6
-SGD_EPOCHS = 5
-MINI_BATCH_SIZE = 5
-CLIP = 0.2
-ENTROPY_COEFFICIENT = 0.01  # 0.001
-CRITIC_LOSS_DISCOUNT = 0.05  # 0.03
-
-FLAG_CONTINUOUS_ACTION = False
-
-MAX_SAME_ITERATIONS = 2 * SGD_EPOCHS
 
 
 class ActorNetwork(nn.Module):
@@ -97,9 +73,8 @@ def visualization(iteration_rewards, smoothed_rewards):
 
 
 class PPO:
-    def __init__(self, env, function_name):
+    def __init__(self, env):
         self.env = env
-        self.function_name = function_name
 
         self.state_size = NUM_STATES
         self.action_size = NUM_ACTIONS
@@ -118,11 +93,14 @@ class PPO:
         self.parameter_actor = None
         self.parameter_critic = None
 
-    # skip update for the policy and critic network
+        # store recent episode rewards
+        self.recent_rewards = []
+
+    # skip update for the policy and critic network, i.e., policy evaluation/serving stage
     def disable_update(self):
         self.skip_update = True
 
-    # enable update for the policy and critic network
+    # enable update for the policy and critic network, i.e., policy training stage
     def enable_update(self):
         self.skip_update = False
 
@@ -139,19 +117,15 @@ class PPO:
         return action.detach().numpy(), log_prob.detach()
 
     def train(self):
-        # create the checkpoint directory if not created
+        # create the checkpoint and log directory if not created
         if not os.path.exists(CHECKPOINT_DIR):
             os.makedirs(CHECKPOINT_DIR)
+        if not os.path.exists(LOG_DIR):
+            os.makedirs(LOG_DIR)
 
         # for plots
         iteration_rewards = []
         smoothed_rewards = []
-
-        # for explainability
-        iteration_slo_preservations = []
-        smoothed_slo_preservations = []
-        iteration_cpu_utils = []
-        smoothed_cpu_utils = []
 
         pid = os.getpid()
         python_process = psutil.Process(pid)
@@ -159,26 +133,24 @@ class PPO:
             # get resource profiles
             memory_usage = python_process.memory_info()[0] / 2. ** 20  # memory use in MB
             cpu_util = python_process.cpu_percent(interval=None)
-            print('Memory use:', memory_usage, 'CPU util:', cpu_util)
+            print('RL Agent Memory Usage:', memory_usage, 'MB', '| CPU Util:', cpu_util)
 
             states = []
             actions = []
             rewards = []
             log_probs = []
-            all_cpu_utils = []
-            all_slo_preservations = []
 
             for episode in range(EPISODES_PER_ITERATION):
-                state = self.env.reset(self.function_name)[:NUM_STATES]
+                state_dict = self.env.reset()
+                state = convert_state_dict_to_list(state_dict)
                 episode_rewards = []
 
                 for step in range(EPISODE_LENGTH):
                     action, log_prob = self.calc_action(state)
 
-                    # print('debug: action =', action)
-
                     action_to_execute = {
-                        'vertical': 0,
+                        'vertical_cpu': 0,
+                        'vertical_memory': 0,
                         'horizontal': 0,
                     }
 
@@ -192,14 +164,20 @@ class PPO:
                         # scaling in
                         action_to_execute['horizontal'] = -HORIZONTAL_SCALING_STEP
                     elif action == 3:
-                        # scaling up
-                        action_to_execute['vertical'] = VERTICAL_SCALING_STEP
+                        # scaling up CPU
+                        action_to_execute['vertical_cpu'] = VERTICAL_SCALING_STEP
                     elif action == 4:
-                        # scaling down
-                        action_to_execute['vertical'] = -VERTICAL_SCALING_STEP
+                        # scaling down CPU
+                        action_to_execute['vertical_cpu'] = -VERTICAL_SCALING_STEP
+                    elif action == 5:
+                        # scaling up memory
+                        action_to_execute['vertical_memory'] = VERTICAL_SCALING_STEP
+                    elif action == 6:
+                        # scaling down memory
+                        action_to_execute['vertical_memory'] = -VERTICAL_SCALING_STEP
 
-                    next_state, reward, done = self.env.step(self.function_name, action_to_execute)
-                    next_state = next_state[:NUM_STATES]
+                    next_state_dict, reward = self.env.step(action_to_execute)
+                    next_state = convert_state_dict_to_list(next_state_dict)
 
                     states.append(state)
                     episode_rewards.append(reward)
@@ -209,27 +187,44 @@ class PPO:
                     else:
                         actions.append(action.item())
 
-                    all_cpu_utils.append(next_state[0])
-                    all_slo_preservations.append(next_state[1])
-
                     # verbose
                     if episode % 5 == 0 and iteration % 50 == 0:
-                        print_step_info(step, state, action_to_execute, reward)
+                        print_step_info(step, state_dict, action_to_execute, reward)
 
-                    if done:
-                        break
                     state = next_state
+                    state_dict = next_state_dict
 
                 # end of one episode
                 rewards.append(episode_rewards)
+                if len(self.recent_rewards) < MAX_NUM_REWARDS_TO_CHECK:
+                    # add the episode reward to the list
+                    self.recent_rewards.append(np.sum(episode_rewards))
+                else:
+                    # remove the oldest item first
+                    self.recent_rewards.pop(0)
+                    # add the episode reward to the list
+                    self.recent_rewards.append(np.sum(episode_rewards))
+
+                    # check during policy-serving stage if retraining is needed
+                    if self.skip_update:
+                        print('Checking if policy re-training is needed...')
+                        avg_reward = np.mean(self.recent_rewards)
+                        std_reward = np.std(self.recent_rewards)
+                        if avg_reward < REWARD_AVG_THRESHOLD or std_reward >= REWARD_STD_THRESHOLD:
+                            self.skip_update = False
+                            print('Re-training is enabled! avg(rewards) =', avg_reward, 'std(rewards) =', std_reward)
+
+                    # check during policy-training stage if training is done
+                    if not self.skip_update:
+                        avg_reward = np.mean(self.recent_rewards)
+                        std_reward = np.std(self.recent_rewards)
+                        if avg_reward >= REWARD_AVG_THRESHOLD and std_reward < REWARD_STD_THRESHOLD:
+                            self.skip_update = True
+                            print('Training is completed! avg(rewards) =', avg_reward, 'std(rewards) =', std_reward)
 
             # end of one iteration
             iteration_rewards.append(np.mean([np.sum(episode_rewards) for episode_rewards in rewards]))
             smoothed_rewards.append(np.mean(iteration_rewards[-10:]))
-            iteration_slo_preservations.append(np.mean(all_slo_preservations))
-            smoothed_slo_preservations.append(np.mean(iteration_slo_preservations[-10:]))
-            iteration_cpu_utils.append(np.mean(all_cpu_utils))
-            smoothed_cpu_utils.append(np.mean(iteration_cpu_utils[-10:]))
 
             # states = torch.FloatTensor(states)
             states = torch.FloatTensor(np.array(states))
@@ -243,6 +238,10 @@ class PPO:
             print('Iteration:', iteration, '- Average rewards across episodes:', np.round(average_rewards, decimals=3),
                   '| Moving average:', np.round(np.mean(iteration_rewards[-10:]), decimals=3))
 
+            if SAVE_TO_FILE:
+                all_rewards = [reward for reward_ep in rewards for reward in reward_ep]
+                self.save_trajectories(iteration, states, actions, all_rewards)
+
             if self.skip_update:
                 continue
 
@@ -253,7 +252,7 @@ class PPO:
             advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
 
             for epoch in range(SGD_EPOCHS):
-                batch_size = states.size(0)  # whole batch of size 4000 (= 20 * 200)
+                batch_size = states.size(0)  # whole batch size = num of steps
                 # use mini-batch instead of the whole batch
                 for mini_batch in range(batch_size // MINI_BATCH_SIZE):
                     ids = np.random.randint(0, batch_size, MINI_BATCH_SIZE)
@@ -322,10 +321,11 @@ class PPO:
 
             if self.num_same_parameter_critic > MAX_SAME_ITERATIONS and\
                     self.num_same_parameter_actor > MAX_SAME_ITERATIONS:
-                break
+                print('Model parameters are not updating! Turning to policy-serving stage...')
+                self.skip_update = True
 
             # save to checkpoint
-            if iteration % 100 == 0:
+            if iteration % 100 == 0 and iteration != 0:
                 self.save_checkpoint(iteration)
 
         # plot
@@ -334,31 +334,13 @@ class PPO:
 
         # write rewards to file
         if SAVE_TO_FILE:
-            file = open("ppo_smoothed_rewards.txt", "w")
+            file = open(LOG_DIR + "ppo_smoothed_rewards.txt", "w")
             for reward in smoothed_rewards:
                 file.write(str(reward) + "\n")
             file.close()
-            file = open("ppo_iteration_rewards.txt", "w")
+            file = open(LOG_DIR + "ppo_iteration_rewards.txt", "w")
             for reward in iteration_rewards:
                 file.write(str(reward) + "\n")
-            file.close()
-
-            # write cpu_utils and slo_preservations to file
-            file = open("ppo_cpu_utils_all.txt", "w")
-            for cpu_util in iteration_cpu_utils:
-                file.write(str(cpu_util) + "\n")
-            file.close()
-            file = open("ppo_cpu_utils_smoothed.txt", "w")
-            for cpu_util in smoothed_cpu_utils:
-                file.write(str(cpu_util) + "\n")
-            file.close()
-            file = open("ppo_slo_preservation_all.txt", "w")
-            for ratio in iteration_slo_preservations:
-                file.write(str(ratio) + "\n")
-            file.close()
-            file = open("ppo_slo_preservation_smoothed.txt", "w")
-            for ratio in smoothed_slo_preservations:
-                file.write(str(ratio) + "\n")
             file.close()
 
     # load all model parameters from a saved checkpoint
@@ -383,3 +365,15 @@ class PPO:
         }
 
         torch.save(checkpoint, checkpoint_name)
+
+    # record trajectories
+    def save_trajectories(self, episode_num, states, actions, rewards):
+        print('states:', states)
+        print('actions:', actions)
+        print('rewards:', rewards)
+        file = open(LOG_DIR + "ppo_trajectories.csv", "a")
+        count = 0
+        for state in states:
+            file.write(str(episode_num) + ',' + ','.join([str(item.item()) for item in state]) + ',' + str(actions[count].item()) + ',' + str(rewards[count]) + "\n")
+            count += 1
+        file.close()

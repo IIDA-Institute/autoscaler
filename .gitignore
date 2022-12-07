@@ -33,3 +33,6 @@ go.mod
 Session.vim
 .netrwhist
 
+# Logs
+checkpoint
+logs
